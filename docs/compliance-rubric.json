@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AccessLecture Compliance Scoring Rubric",
+  "description": "Scoring rubric grounded in WCAG 2.1 AA, Section 508, FCC caption quality standards, and DCMP Captioning Key. Each dimension maps to a specific regulatory requirement.",
+  "version": "1.0.0",
+  "standards_references": {
+    "wcag_2_1": {
+      "url": "https://www.w3.org/TR/WCAG21/",
+      "criteria": ["1.2.2", "1.2.3", "1.2.4", "1.2.5"]
+    },
+    "section_508": {
+      "url": "https://www.section508.gov/",
+      "note": "References WCAG 2.0 AA as technical standard; 29 U.S.C. 794d"
+    },
+    "fcc_caption_quality": {
+      "url": "https://www.fcc.gov/consumers/guides/closed-captioning-television",
+      "pillars": ["accuracy", "synchronicity", "completeness", "placement"]
+    },
+    "dcmp_captioning_key": {
+      "url": "https://dcmp.org/learn/captioningkey",
+      "pillars": ["accuracy", "consistency", "clarity", "readability", "equality"]
+    },
+    "ada_title_ii": {
+      "note": "Applies to public universities; WCAG 2.1 AA compliance required by 2026"
+    },
+    "uc_policy_is_12": {
+      "note": "UC system-wide Electronic Accessibility policy; references WCAG 2.x AA"
+    }
+  },
+  "scoring": {
+    "pass_threshold": 95,
+    "dimensions": [
+      {
+        "id": "accuracy",
+        "name": "Caption Accuracy",
+        "weight": 0.30,
+        "description": "Captions must accurately represent spoken dialogue with no more than 1 error per 100 words (99% accuracy minimum).",
+        "standard": "Section 508 / DCMP Captioning Key / FCC",
+        "measurements": [
+          {
+            "id": "word_error_rate",
+            "name": "Word Error Rate (WER)",
+            "target": "<=0.01",
+            "unit": "ratio",
+            "description": "Ratio of incorrect words to total words. Target: 99% or higher accuracy."
+          },
+          {
+            "id": "proper_nouns",
+            "name": "Proper Noun Accuracy",
+            "target": "100%",
+            "description": "Names, places, and technical terms must be spelled correctly."
+          },
+          {
+            "id": "grammar_punctuation",
+            "name": "Grammar & Punctuation",
+            "target": "correct",
+            "description": "Proper spelling, grammar, and punctuation throughout."
+          }
+        ],
+        "failure_criteria": "WCAG F8: Captions omitting dialogue or important sound effects."
+      },
+      {
+        "id": "synchronization",
+        "name": "Caption Synchronization",
+        "weight": 0.20,
+        "description": "Captions must appear synchronized with their corresponding audio, within a tight tolerance.",
+        "standard": "FCC Synchronicity / DCMP Readability / Section 508",
+        "measurements": [
+          {
+            "id": "sync_offset",
+            "name": "Sync Offset",
+            "target": "<=500ms",
+            "unit": "milliseconds",
+            "description": "Maximum time difference between caption display and corresponding audio. FCC/Section 508 target: within 0.5 seconds."
+          },
+          {
+            "id": "display_duration_min",
+            "name": "Minimum Display Duration",
+            "target": ">=1333ms",
+            "unit": "milliseconds",
+            "description": "Minimum 1 second 10 frames (~1.33s) per DCMP Captioning Key."
+          },
+          {
+            "id": "display_duration_max",
+            "name": "Maximum Display Duration",
+            "target": "<=6000ms",
+            "unit": "milliseconds",
+            "description": "Maximum 6 seconds per caption block per DCMP Captioning Key."
+          },
+          {
+            "id": "reading_speed",
+            "name": "Reading Speed",
+            "target": "<=160wpm",
+            "unit": "words_per_minute",
+            "description": "Upper-level educational content should not exceed 160 words per minute. DCMP specifies 120-160 wpm depending on audience level."
+          }
+        ]
+      },
+      {
+        "id": "completeness",
+        "name": "Caption Completeness",
+        "weight": 0.20,
+        "description": "Captions must cover the entire duration of meaningful audio from beginning to end.",
+        "standard": "FCC Completeness / WCAG 1.2.2 / Section 508",
+        "measurements": [
+          {
+            "id": "audio_coverage",
+            "name": "Audio Coverage",
+            "target": "100%",
+            "description": "Percentage of spoken audio that has corresponding captions. All dialogue must be captioned."
+          },
+          {
+            "id": "gap_detection",
+            "name": "Caption Gaps",
+            "target": "no gaps > 5s during speech",
+            "description": "No gaps longer than 5 seconds during active speech. Silent periods are acceptable."
+          },
+          {
+            "id": "non_speech_sounds",
+            "name": "Non-Speech Sound Descriptions",
+            "target": "all significant sounds described",
+            "description": "Music, laughter, applause, environmental sounds, and other meaningful non-speech audio must be captioned using bracket notation: [music], [laughter], [applause]."
+          }
+        ],
+        "failure_criteria": "WCAG F8: Omitting dialogue or important sound effects is a failure."
+      },
+      {
+        "id": "speaker_identification",
+        "name": "Speaker Identification",
+        "weight": 0.10,
+        "description": "When multiple speakers are present, each speaker must be clearly identified.",
+        "standard": "WCAG 1.2.2 / DCMP Clarity / Section 508",
+        "measurements": [
+          {
+            "id": "speaker_labels_present",
+            "name": "Speaker Labels Present",
+            "target": "all speaker changes labeled",
+            "description": "Every change in speaker must be indicated. Format: '>> Speaker Name:' or '[Speaker Name]:'"
+          },
+          {
+            "id": "speaker_consistency",
+            "name": "Speaker Label Consistency",
+            "target": "consistent throughout",
+            "description": "Same speaker must always be identified the same way. No mixing of 'Prof. Smith' and 'Professor Smith'."
+          }
+        ]
+      },
+      {
+        "id": "formatting",
+        "name": "Caption Formatting",
+        "weight": 0.10,
+        "description": "Captions must follow standard formatting rules for readability.",
+        "standard": "DCMP Captioning Key / Section 508 / FCC Placement",
+        "measurements": [
+          {
+            "id": "line_length",
+            "name": "Line Length",
+            "target": "<=42 characters",
+            "description": "Maximum 42 characters per line (DCMP recommends 32 for optimal readability). Hard maximum of 45."
+          },
+          {
+            "id": "lines_per_caption",
+            "name": "Lines Per Caption",
+            "target": "<=2",
+            "description": "Maximum 2 lines per caption block."
+          },
+          {
+            "id": "line_breaks",
+            "name": "Logical Line Breaks",
+            "target": "break at natural speech pauses",
+            "description": "Line breaks should occur at logical speech pauses. Do not break: modifiers from words, prepositional phrases, proper nouns, conjunctions from clauses, auxiliary verbs from main verbs."
+          },
+          {
+            "id": "case",
+            "name": "Mixed Case",
+            "target": "mixed case (not all caps)",
+            "description": "Use mixed case characters. ALL CAPS only for emphasis/shouting per DCMP."
+          }
+        ]
+      },
+      {
+        "id": "visual_accessibility",
+        "name": "Visual Reference Accessibility",
+        "weight": 0.10,
+        "description": "Captions must flag or describe visual content that is referenced in speech but not visible to those relying solely on captions/audio.",
+        "standard": "WCAG 1.2.3 / 1.2.5 Audio Description / UDL Principles",
+        "measurements": [
+          {
+            "id": "visual_reference_flags",
+            "name": "Visual Reference Detection",
+            "target": "all visual references flagged",
+            "description": "Phrases like 'as you can see', 'look at this graph', 'this slide shows', 'over here' must be flagged as they are inaccessible without visual context.",
+            "detection_patterns": [
+              "as you can see",
+              "as shown here",
+              "look at this",
+              "this graph",
+              "this chart",
+              "this slide",
+              "this diagram",
+              "this table",
+              "this image",
+              "over here",
+              "right here",
+              "on the screen",
+              "on the board",
+              "points to",
+              "highlighted in",
+              "the one in red",
+              "the one in blue",
+              "you'll notice",
+              "if you look at"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "compliance_modes": {
+    "verbatim": {
+      "description": "Preserves all speech exactly as spoken, including filler words and false starts. Only fixes clear transcription errors. Required by some strict interpretations of Section 508.",
+      "filler_words_policy": "preserve",
+      "false_starts_policy": "preserve",
+      "grammar_correction": "transcription_errors_only",
+      "use_case": "Legal compliance, formal accommodation requests"
+    },
+    "clean": {
+      "description": "Removes filler words (um, uh, like, you know), fixes grammar, and improves readability while preserving meaning. Preferred for educational accessibility and readability.",
+      "filler_words_policy": "remove",
+      "false_starts_policy": "remove",
+      "grammar_correction": "full",
+      "use_case": "Educational content, general accessibility improvement"
+    }
+  },
+  "overall_score_calculation": {
+    "method": "weighted_average",
+    "formula": "sum(dimension.score * dimension.weight) for all dimensions",
+    "rating_scale": {
+      "excellent": { "min": 95, "label": "Fully Compliant", "color": "green" },
+      "good": { "min": 80, "label": "Mostly Compliant - Minor Issues", "color": "yellow" },
+      "needs_work": { "min": 60, "label": "Partially Compliant - Action Required", "color": "orange" },
+      "poor": { "min": 0, "label": "Non-Compliant - Significant Issues", "color": "red" }
+    }
+  }
+}

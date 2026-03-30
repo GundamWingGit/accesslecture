@@ -1,0 +1,24 @@
+# Local IDE / agent caches (not needed for the app)
+.agents/
+.claude/
+.continue/
+skills/
+skills-lock.json
+
+node_modules/
+.next/
+out/
+__pycache__/
+*.py[cod]
+.env
+.env.local
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.egg
+playbook_clean.txt
+gcp-credentials.json
+*-credentials.json
