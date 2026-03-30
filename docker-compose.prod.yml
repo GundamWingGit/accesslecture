@@ -1,8 +1,10 @@
+# Production-style stack: no bind mounts, images built from Dockerfile.backend.
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+# Requires NVIDIA Container Toolkit on the host for GPU services.
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     volumes:
       - redis_data:/data
 
@@ -17,11 +19,12 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       COMPLIANCE_RUBRIC_PATH: /docs/compliance-rubric.json
+    # Uncomment if using Vertex with a service account JSON file on the host:
+    # volumes:
+    #   - ./backend/gcp-credentials.json:/app/gcp-credentials.json:ro
     depends_on:
       - redis
-    volumes:
-      - ./backend:/app
-      - ./docs:/docs
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
@@ -40,11 +43,11 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       COMPLIANCE_RUBRIC_PATH: /docs/compliance-rubric.json
+    # volumes:
+    #   - ./backend/gcp-credentials.json:/app/gcp-credentials.json:ro
     depends_on:
       - redis
-    volumes:
-      - ./backend:/app
-      - ./docs:/docs
+    restart: unless-stopped
     deploy:
       resources:
         reservations:

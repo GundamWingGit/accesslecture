@@ -40,7 +40,10 @@ class ComplianceScorer:
 
     def __init__(self):
         self.settings = get_settings()
-        rubric_path = Path(__file__).parent.parent.parent.parent / "docs" / "compliance-rubric.json"
+        if self.settings.compliance_rubric_path:
+            rubric_path = Path(self.settings.compliance_rubric_path)
+        else:
+            rubric_path = Path(__file__).parent.parent.parent.parent / "docs" / "compliance-rubric.json"
         if rubric_path.exists():
             with open(rubric_path) as f:
                 self.rubric = json.load(f)

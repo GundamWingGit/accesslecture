@@ -9,6 +9,13 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    # CORS: comma-separated exact origins; regex matches preview + production *.vercel.app
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origin_regex: str = r"https://.*\.vercel\.app"
+
+    # Optional override (Docker: /docs/compliance-rubric.json)
+    compliance_rubric_path: str = ""
+
     # Vertex AI / Gemini settings
     use_vertex_ai: bool = True
     google_application_credentials: str = "gcp-credentials.json"

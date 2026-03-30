@@ -1,0 +1,8 @@
+# Set these in Vercel → Project → Settings → Environment Variables (Production / Preview).
+# Or use CLI from frontend/: vercel env add NAME
+#
+# NEXT_PUBLIC_API_URL=https://YOUR-GCP-OR-VM-HOST:8000/api
+# NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
+#
+# After changing env vars, redeploy.

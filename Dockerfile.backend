@@ -1,7 +1,9 @@
+# Build from repository root: docker build -f Dockerfile.backend -t accesslecture-backend .
 FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV COMPLIANCE_RUBRIC_PATH=/docs/compliance-rubric.json
 
 RUN apt-get update && apt-get install -y \
     python3.11 python3.11-venv python3-pip \
@@ -12,10 +14,11 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY docs/compliance-rubric.json /docs/compliance-rubric.json
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
 
 EXPOSE 8000
 

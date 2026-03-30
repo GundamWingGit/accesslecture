@@ -7,14 +7,14 @@ A compliance-first, self-hostable platform that transforms lecture recordings in
 ## Architecture
 
 ```
-Frontend (Next.js 15)  →  API Gateway  →  Processing Backend (Python/FastAPI)
+Frontend (Next.js)  →  API Gateway  →  Processing Backend (Python/FastAPI)
        ↕                                         ↕
    Supabase                              faster-whisper + pyannote.audio
 (Auth, DB, Storage, Realtime)            Gemini Flash / Local LLM
 ```
 
 ### Frontend
-- **Next.js 15** (App Router) with Tailwind CSS + shadcn/ui
+- **Next.js** (App Router) with Tailwind CSS + shadcn/ui
 - **ffmpeg.wasm** for client-side video-to-audio extraction
 - Deployed on Vercel
 
@@ -52,10 +52,26 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-### Run Everything with Docker
+### Run Everything with Docker (GPU host)
+Build context is the **repository root** (`Dockerfile.backend` includes `docs/compliance-rubric.json`).
+
 ```bash
-docker compose up
+# Dev: bind-mounts backend + docs, Redis URL wired for Compose
+docker compose up --build
+
+# Production-style (no bind mounts; rebuild after code changes)
+docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+### Connect Vercel → API + Supabase
+1. Deploy the **frontend** on Vercel with **Root Directory** = `frontend`.
+2. In Vercel **Environment Variables**, set:
+   - `NEXT_PUBLIC_API_URL` — your **public** FastAPI base, e.g. `https://api.example.com/api` (must match how routes are mounted).
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from Supabase (anon/publishable key for the browser).
+3. Deploy the **backend** on a **GPU VM** (e.g. Google Compute Engine with NVIDIA + Docker) or your own server: use `docker-compose.prod.yml`, fill `backend/.env`, place `gcp-credentials.json` for Vertex if used, open HTTPS (reverse proxy recommended).
+4. CORS allows `localhost` and any `https://*.vercel.app` by default; add custom domains via `CORS_ORIGINS` in `backend/.env` if needed.
+
+See `scripts/vercel-env-template.txt` for a checklist.
 
 ## Compliance Standards
 
