@@ -5,7 +5,6 @@ import {
   Upload,
   Shield,
   LogOut,
-  Loader2,
   UserCircle,
   CreditCard,
   Sparkles,
@@ -13,7 +12,6 @@ import {
 import { LectureDashboard } from "@/components/dashboard/lecture-dashboard";
 import { UploadPanel } from "@/components/upload/upload-panel";
 import { LectureDetail } from "@/components/lecture/lecture-detail";
-import { LoginForm } from "@/components/auth/login-form";
 import { ProfilePage } from "@/components/profile/profile-page";
 import { PricingPage } from "@/components/pricing-page";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
@@ -24,27 +22,10 @@ import { useAppStore } from "@/lib/store";
 
 type View = "dashboard" | "upload" | "profile" | "pricing";
 
-export default function Home() {
-  const { user, loading, signOut } = useAuth();
+export default function DashboardPage() {
+  const { user, signOut } = useAuth();
   const currentLectureId = useAppStore((s) => s.currentLectureId);
   const [view, setView] = useState<View>("dashboard");
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20 animate-pulse">
-            <Sparkles className="w-6 h-6 text-primary-foreground" />
-          </div>
-          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <LoginForm />;
-  }
 
   const goHome = () => {
     useAppStore.getState().setCurrentLecture(null);
@@ -53,7 +34,6 @@ export default function Home() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Glass header */}
       <header className="glass sticky top-0 z-50 border-b-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <button
@@ -75,7 +55,7 @@ export default function Home() {
 
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground hidden sm:block truncate max-w-[160px] mr-1">
-              {user.email}
+              {user?.email}
             </span>
             <ThemeToggle />
             <Button
