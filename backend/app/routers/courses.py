@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from app.auth import get_current_user_id
 from app.services.supabase_client import get_supabase
 
 router = APIRouter()
@@ -19,7 +20,7 @@ class CourseResponse(BaseModel):
 
 
 @router.post("/", response_model=CourseResponse)
-async def create_course(course: CourseCreate):
+async def create_course(course: CourseCreate, user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
     result = sb.table("courses").insert({
         "name": course.name,
@@ -32,14 +33,14 @@ async def create_course(course: CourseCreate):
 
 
 @router.get("/", response_model=list[CourseResponse])
-async def list_courses():
+async def list_courses(user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
     result = sb.table("courses").select("*").order("created_at", desc=True).execute()
     return [CourseResponse(**row) for row in result.data]
 
 
 @router.get("/{course_id}", response_model=CourseResponse)
-async def get_course(course_id: str):
+async def get_course(course_id: str, user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
     result = sb.table("courses").select("*").eq("id", course_id).execute()
     if not result.data:
@@ -48,7 +49,7 @@ async def get_course(course_id: str):
 
 
 @router.put("/{course_id}/vocabulary")
-async def update_vocabulary(course_id: str, vocabulary: list[str]):
+async def update_vocabulary(course_id: str, vocabulary: list[str], user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
     result = sb.table("courses").update({"vocabulary": vocabulary}).eq("id", course_id).execute()
     if not result.data:
@@ -57,8 +58,7 @@ async def update_vocabulary(course_id: str, vocabulary: list[str]):
 
 
 @router.put("/{course_id}/syllabus")
-async def update_syllabus(course_id: str, syllabus_text: str):
-    """Upload syllabus text to improve AI caption accuracy for course-specific terminology."""
+async def update_syllabus(course_id: str, syllabus_text: str, user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
 
     from app.services.providers import get_cleanup_provider

@@ -15,9 +15,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AccessLecture",
+  title: {
+    default: "AccessLecture",
+    template: "%s | AccessLecture",
+  },
   description:
-    "Turn any lecture into an accessible course asset in minutes using AI. WCAG 2.1 / Section 508 compliant.",
+    "Turn any lecture into an accessible course asset in minutes using AI. WCAG 2.1 / Section 508 compliant captioning, transcription, and accessibility scoring.",
+  keywords: ["accessibility", "captions", "WCAG", "Section 508", "lecture", "transcription", "AI"],
+  authors: [{ name: "AccessLecture" }],
 };
 
 export default function RootLayout({
@@ -29,6 +34,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>{children}</Providers>

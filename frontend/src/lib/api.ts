@@ -1,13 +1,27 @@
+import { getSupabaseBrowser } from "@/lib/supabase";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+
+async function getAuthToken(): Promise<string | null> {
+  const sb = getSupabaseBrowser();
+  const { data } = await sb.auth.getSession();
+  return data.session?.access_token ?? null;
+}
 
 async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
+  const token = await getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((options?.headers as Record<string, string>) ?? {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || `API Error: ${res.status}`);
@@ -29,6 +43,8 @@ export const api = {
       request(`/lectures/${id}`, { method: "DELETE" }),
     progress: (id: string) =>
       request<ProcessingProgress>(`/lectures/${id}/progress`),
+    confirmReview: (id: string) =>
+      request<{ reviewed_at: string }>(`/lectures/${id}/confirm-review`, { method: "POST" }),
   },
 
   transcript: {
@@ -47,7 +63,7 @@ export const api = {
     update: (lectureId: string, captionId: string, text: string) =>
       request(`/cleanup/${lectureId}/captions/${captionId}`, {
         method: "PUT",
-        body: JSON.stringify(text),
+        body: JSON.stringify({ text }),
       }),
   },
 
@@ -73,14 +89,39 @@ export const api = {
   },
 
   export: {
-    vtt: (lectureId: string, cleaned = true) =>
-      `${API_BASE}/export/${lectureId}/vtt?cleaned=${cleaned}`,
-    srt: (lectureId: string, cleaned = true) =>
-      `${API_BASE}/export/${lectureId}/srt?cleaned=${cleaned}`,
+    vtt: async (lectureId: string, cleaned = true) => {
+      const t = await getAuthToken();
+      return `${API_BASE}/export/${lectureId}/vtt?cleaned=${cleaned}&token=${t ?? ""}`;
+    },
+    srt: async (lectureId: string, cleaned = true) => {
+      const t = await getAuthToken();
+      return `${API_BASE}/export/${lectureId}/srt?cleaned=${cleaned}&token=${t ?? ""}`;
+    },
+    txt: async (lectureId: string, cleaned = true) => {
+      const t = await getAuthToken();
+      return `${API_BASE}/export/${lectureId}/txt?cleaned=${cleaned}&token=${t ?? ""}`;
+    },
+    canvas: async (lectureId: string, cleaned = true) => {
+      const t = await getAuthToken();
+      return `${API_BASE}/export/${lectureId}/canvas-package?cleaned=${cleaned}&token=${t ?? ""}`;
+    },
     bundle: (lectureId: string, formats: string[]) =>
       request(`/export/${lectureId}`, {
         method: "POST",
         body: JSON.stringify({ lecture_id: lectureId, formats, use_cleaned: true }),
+      }),
+  },
+  billing: {
+    status: () => request<BillingStatus>("/billing/status"),
+    createCheckoutSession: (successUrl: string, cancelUrl: string) =>
+      request<{ url: string }>("/billing/create-checkout-session", {
+        method: "POST",
+        body: JSON.stringify({ success_url: successUrl, cancel_url: cancelUrl }),
+      }),
+    createPortalSession: (returnUrl: string) =>
+      request<{ url: string }>("/billing/create-portal-session", {
+        method: "POST",
+        body: JSON.stringify({ return_url: returnUrl }),
       }),
   },
 };
@@ -91,8 +132,11 @@ export interface Lecture {
   title: string;
   status: string;
   audio_url: string | null;
+  video_url: string | null;
   compliance_mode: string;
   duration_seconds: number | null;
+  user_id: string | null;
+  reviewed_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -137,6 +181,7 @@ export interface CaptionBlock {
   original_text: string;
   cleaned_text: string | null;
   speaker: string | null;
+  min_confidence: number;
 }
 
 export interface CaptionsData {
@@ -192,3 +237,11 @@ export interface FixAllRequest {
   fix_speakers?: boolean;
   syllabus_context?: string;
 }
+
+export interface BillingStatus {
+  plan: string;
+  subscription_status: string;
+  current_period_end: string | null;
+  lectures_this_month: number;
+}
+

@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
+import { MediaPlayer } from "./media-player";
 import { ProcessingView } from "./processing-view";
 import { ScoreOverview } from "./score-overview";
 import { CaptionEditor } from "./caption-editor";
@@ -20,6 +22,7 @@ interface LectureDetailProps {
 
 export function LectureDetail({ lectureId }: LectureDetailProps) {
   const setCurrentLecture = useAppStore((s) => s.setCurrentLecture);
+  const setReviewedAt = useAppStore((s) => s.setReviewedAt);
 
   const { data: lecture, isLoading } = useQuery({
     queryKey: ["lecture", lectureId],
@@ -30,6 +33,17 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
       return false;
     },
   });
+
+  const { data: captionsData } = useQuery({
+    queryKey: ["captions", lectureId],
+    queryFn: () => api.captions.get(lectureId),
+    enabled: lecture?.status === "completed",
+  });
+
+  useEffect(() => {
+    if (lecture?.reviewed_at) setReviewedAt(lecture.reviewed_at);
+    else setReviewedAt(null);
+  }, [lecture?.reviewed_at, setReviewedAt]);
 
   if (isLoading) {
     return (
@@ -51,13 +65,14 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
         <Button
           variant="ghost"
           size="sm"
+          className="rounded-xl"
           onClick={() => setCurrentLecture(null)}
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
         <div>
-          <h2 className="text-2xl font-semibold">{lecture.title}</h2>
+          <h2 className="text-2xl font-bold gradient-text">{lecture.title}</h2>
           <p className="text-sm text-muted-foreground">
             {lecture.compliance_mode === "verbatim" ? "Verbatim" : "Clean"} mode
             {lecture.duration_seconds
@@ -70,7 +85,7 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
       {isProcessing ? (
         <ProcessingView lectureId={lectureId} />
       ) : lecture.status === "failed" ? (
-        <div className="rounded-xl border border-destructive/50 bg-destructive/5 p-6 text-center">
+        <div className="glass rounded-2xl border border-destructive/30 p-6 text-center">
           <p className="text-destructive font-medium">Processing failed</p>
           <p className="text-sm text-muted-foreground mt-1">
             Please try uploading again or contact support.
@@ -78,6 +93,11 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
         </div>
       ) : (
         <>
+          {/* Media player — always visible when lecture is completed */}
+          {lecture.audio_url && (
+            <MediaPlayer lecture={lecture} captions={captionsData?.captions} />
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
               <ScoreOverview lectureId={lectureId} />

@@ -8,8 +8,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type Lecture } from "@/lib/api";
@@ -57,33 +58,38 @@ function LectureCard({
   const config = STATUS_CONFIG[lecture.status] || STATUS_CONFIG.uploaded;
   const Icon = config.icon;
   const isProcessing = ["transcribing", "diarizing", "cleaning", "scoring"].includes(lecture.status);
+  const isReviewed = !!lecture.reviewed_at;
 
   return (
-    <Card
-      className="cursor-pointer hover:shadow-md transition-shadow"
+    <div
+      className="glass rounded-2xl p-5 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-all duration-200"
       onClick={onClick}
     >
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-              <FileAudio className="w-5 h-5 text-muted-foreground" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-medium truncate">{lecture.title}</h3>
-              <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                <span>{formatDuration(lecture.duration_seconds)}</span>
-                <span>{formatDate(lecture.created_at)}</span>
-              </div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
+            <FileAudio className="w-5 h-5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold truncate">{lecture.title}</h3>
+            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+              <span>{formatDuration(lecture.duration_seconds)}</span>
+              <span>{formatDate(lecture.created_at)}</span>
+              {isReviewed && (
+                <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
+                  <ShieldCheck className="w-3 h-3" />
+                  Reviewed
+                </span>
+              )}
             </div>
           </div>
-          <Badge variant={config.variant} className="flex-shrink-0">
-            <Icon className={`w-3 h-3 mr-1 ${isProcessing ? "animate-spin" : ""}`} />
-            {config.label}
-          </Badge>
         </div>
-      </CardContent>
-    </Card>
+        <Badge variant={config.variant} className="flex-shrink-0 rounded-lg">
+          <Icon className={`w-3 h-3 mr-1 ${isProcessing ? "animate-spin" : ""}`} />
+          {config.label}
+        </Badge>
+      </div>
+    </div>
   );
 }
 
@@ -104,16 +110,16 @@ export function LectureDashboard({ onSelect, onUpload }: LectureDashboardProps) 
   if (!lectures || lectures.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-6">
-          <FileAudio className="w-8 h-8 text-muted-foreground" />
+        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-6 shadow-lg shadow-primary/10">
+          <Sparkles className="w-10 h-10 text-primary" />
         </div>
-        <h2 className="text-2xl font-semibold mb-2">No lectures yet</h2>
-        <p className="text-muted-foreground mb-6 max-w-md">
+        <h2 className="text-3xl font-bold gradient-text mb-2">No lectures yet</h2>
+        <p className="text-muted-foreground mb-8 max-w-md">
           Upload a lecture recording to get started. We&apos;ll transcribe it,
           generate compliant captions, and score its accessibility.
         </p>
-        <Button onClick={onUpload} size="lg">
-          <Upload className="w-4 h-4 mr-2" />
+        <Button onClick={onUpload} size="lg" className="rounded-xl btn-gradient px-8 h-12 text-base shadow-lg">
+          <Upload className="w-5 h-5 mr-2" />
           Upload Your First Lecture
         </Button>
       </div>
@@ -123,7 +129,7 @@ export function LectureDashboard({ onSelect, onUpload }: LectureDashboardProps) 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-semibold">Your Lectures</h2>
+        <h2 className="text-2xl font-bold gradient-text">Your Lectures</h2>
         <span className="text-sm text-muted-foreground">
           {lectures.length} lecture{lectures.length !== 1 ? "s" : ""}
         </span>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/lib/api";
@@ -23,31 +22,29 @@ export function TranscriptViewer({ lectureId }: { lectureId: string }) {
 
   if (isLoading || !data) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="animate-pulse space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 bg-muted rounded" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="glass rounded-2xl p-6">
+        <div className="animate-pulse space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 bg-muted/50 rounded-xl" />
+          ))}
+        </div>
+      </div>
     );
   }
 
   const speakerMap = data.speaker_map || {};
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">
+    <div className="glass rounded-2xl overflow-hidden">
+      <div className="px-5 pt-5 pb-3">
+        <h3 className="text-lg font-semibold">
           Full Transcript
           <span className="text-sm font-normal text-muted-foreground ml-2">
             {data.segments.length} segments
           </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
+        </h3>
+      </div>
+      <div className="p-0">
         <ScrollArea className="h-[600px]">
           <div className="p-4 space-y-4">
             {data.segments.map((seg) => {
@@ -64,7 +61,7 @@ export function TranscriptViewer({ lectureId }: { lectureId: string }) {
                   </div>
                   <div className="flex-1">
                     {speakerName && (
-                      <Badge variant="secondary" className="mb-1 text-xs">
+                      <Badge variant="secondary" className="mb-1 text-xs rounded-lg">
                         {speakerName}
                       </Badge>
                     )}
@@ -75,7 +72,7 @@ export function TranscriptViewer({ lectureId }: { lectureId: string }) {
             })}
           </div>
         </ScrollArea>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

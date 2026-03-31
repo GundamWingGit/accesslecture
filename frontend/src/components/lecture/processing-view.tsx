@@ -1,12 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Mic, Users, Sparkles, BarChart3 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, Mic, Users, Sparkles, BarChart3, Clock } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 
 const STAGE_ICONS: Record<string, typeof Mic> = {
+  uploaded: Clock,
   transcribing: Mic,
   diarizing: Users,
   cleaning: Sparkles,
@@ -15,11 +15,13 @@ const STAGE_ICONS: Record<string, typeof Mic> = {
 
 const STAGE_LABELS: Record<string, string> = {
   uploaded: "Queued",
-  transcribing: "Transcribing audio",
-  diarizing: "Identifying speakers",
-  cleaning: "AI cleanup",
-  scoring: "Scoring accessibility",
+  transcribing: "Transcribing",
+  diarizing: "Speaker ID",
+  cleaning: "AI Cleanup",
+  scoring: "Scoring",
 };
+
+const STAGES = ["uploaded", "transcribing", "diarizing", "cleaning", "scoring"];
 
 export function ProcessingView({ lectureId }: { lectureId: string }) {
   const { data: progress } = useQuery({
@@ -33,19 +35,18 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
   const message = progress?.message ?? "Waiting to start...";
   const Icon = STAGE_ICONS[status] || Loader2;
 
-  const stages = ["transcribing", "diarizing", "cleaning", "scoring"];
-  const currentIdx = stages.indexOf(status);
+  const currentIdx = STAGES.indexOf(status);
 
   return (
-    <Card>
-      <CardContent className="p-8">
+    <div className="glass rounded-3xl">
+      <div className="p-8">
         <div className="text-center space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Icon className="w-8 h-8 text-primary animate-pulse" />
+          <div className="w-18 h-18 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto w-[72px] h-[72px] shadow-lg shadow-primary/10">
+            <Icon className="w-9 h-9 text-primary animate-pulse" />
           </div>
 
           <div>
-            <h3 className="text-xl font-semibold">
+            <h3 className="text-xl font-bold gradient-text">
               {STAGE_LABELS[status] || "Processing"}
             </h3>
             <p className="text-sm text-muted-foreground mt-1">{message}</p>
@@ -53,33 +54,33 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
 
           <div className="max-w-md mx-auto space-y-2">
             <Progress value={pct} className="h-2" />
-            <p className="text-sm text-muted-foreground">{Math.round(pct)}%</p>
+            <p className="text-sm text-muted-foreground font-mono">{Math.round(pct)}%</p>
           </div>
 
-          <div className="flex justify-center gap-1">
-            {stages.map((s, i) => {
+          <div className="flex justify-center gap-1.5 flex-wrap">
+            {STAGES.map((s, i) => {
               const StageIcon = STAGE_ICONS[s] || Loader2;
               const isActive = i === currentIdx;
-              const isDone = i < currentIdx;
+              const isDone = currentIdx >= 0 && i < currentIdx;
               return (
                 <div
                   key={s}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-primary text-primary-foreground"
+                      ? "btn-gradient shadow-md"
                       : isDone
-                      ? "bg-muted text-foreground"
-                      : "bg-muted/50 text-muted-foreground"
+                      ? "glass-subtle text-foreground"
+                      : "bg-muted/30 text-muted-foreground"
                   }`}
                 >
-                  <StageIcon className={`w-3 h-3 ${isActive ? "animate-spin" : ""}`} />
+                  <StageIcon className={`w-3 h-3 ${isActive ? "animate-pulse" : ""}`} />
                   {STAGE_LABELS[s]}
                 </div>
               );
             })}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

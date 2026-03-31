@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse, Response
+from app.auth import get_current_user_id
 from app.models.schemas import ExportFormat, ExportRequest
 from app.services.supabase_client import get_supabase
 from app.services.caption_formatter import CaptionFormatter
@@ -8,8 +9,20 @@ from app.services.lms_export import LMSExporter
 router = APIRouter()
 
 
+def _verify_lecture_ownership(lecture_id: str, user_id: str):
+    sb = get_supabase()
+    result = sb.table("lectures").select("id").eq("id", lecture_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+
 @router.post("/{lecture_id}")
-async def export_lecture(lecture_id: str, request: ExportRequest):
+async def export_lecture(
+    lecture_id: str,
+    request: ExportRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    _verify_lecture_ownership(lecture_id, user_id)
     sb = get_supabase()
     captions_result = (
         sb.table("captions")
@@ -42,7 +55,8 @@ async def export_lecture(lecture_id: str, request: ExportRequest):
 
 
 @router.get("/{lecture_id}/vtt")
-async def export_vtt(lecture_id: str, cleaned: bool = True):
+async def export_vtt(lecture_id: str, cleaned: bool = True, token: str = ""):
+    _verify_export_token(lecture_id, token)
     sb = get_supabase()
     result = (
         sb.table("captions")
@@ -60,7 +74,8 @@ async def export_vtt(lecture_id: str, cleaned: bool = True):
 
 
 @router.get("/{lecture_id}/srt")
-async def export_srt(lecture_id: str, cleaned: bool = True):
+async def export_srt(lecture_id: str, cleaned: bool = True, token: str = ""):
+    _verify_export_token(lecture_id, token)
     sb = get_supabase()
     result = (
         sb.table("captions")
@@ -77,9 +92,28 @@ async def export_srt(lecture_id: str, cleaned: bool = True):
     return PlainTextResponse(content=srt_content, media_type="text/plain")
 
 
+@router.get("/{lecture_id}/txt")
+async def export_txt(lecture_id: str, cleaned: bool = True, token: str = ""):
+    _verify_export_token(lecture_id, token)
+    sb = get_supabase()
+    result = (
+        sb.table("captions")
+        .select("*")
+        .eq("lecture_id", lecture_id)
+        .order("sequence")
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No captions found")
+
+    formatter = CaptionFormatter()
+    txt_content = formatter.to_txt(result.data, cleaned)
+    return PlainTextResponse(content=txt_content, media_type="text/plain")
+
+
 @router.get("/{lecture_id}/canvas-package")
-async def export_canvas_package(lecture_id: str, cleaned: bool = True):
-    """Export a Canvas-ready ZIP package with captions, transcript, and report."""
+async def export_canvas_package(lecture_id: str, cleaned: bool = True, token: str = ""):
+    _verify_export_token(lecture_id, token)
     sb = get_supabase()
 
     lecture = sb.table("lectures").select("title").eq("id", lecture_id).execute()
@@ -125,3 +159,22 @@ async def export_canvas_package(lecture_id: str, cleaned: bool = True):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{safe_title}_canvas_package.zip"'},
     )
+
+
+def _verify_export_token(lecture_id: str, token: str):
+    """Verify auth for GET download endpoints (token passed as query param since window.open can't set headers)."""
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token query parameter")
+    try:
+        sb = get_supabase()
+        user_response = sb.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user_id = user_response.user.id
+        result = sb.table("lectures").select("id").eq("id", lecture_id).eq("user_id", user_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Lecture not found")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Authentication failed")

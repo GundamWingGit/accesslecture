@@ -2,7 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Info, AlertCircle, Wrench } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/lib/api";
@@ -30,31 +29,27 @@ export function IssuesPanel({ lectureId }: { lectureId: string }) {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="animate-pulse space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-14 bg-muted rounded" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="glass rounded-2xl p-6">
+        <div className="animate-pulse space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 bg-muted/50 rounded-xl" />
+          ))}
+        </div>
+      </div>
     );
   }
 
   if (!issues || issues.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3">
-            <Wrench className="w-6 h-6 text-green-500" />
-          </div>
-          <p className="font-medium">No issues found</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            All captions pass compliance checks.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="glass rounded-2xl p-8 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+          <Wrench className="w-7 h-7 text-green-500" />
+        </div>
+        <p className="font-semibold">No issues found</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          All captions pass compliance checks.
+        </p>
+      </div>
     );
   }
 
@@ -66,22 +61,22 @@ export function IssuesPanel({ lectureId }: { lectureId: string }) {
   }, {});
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">
+    <div className="glass rounded-2xl overflow-hidden">
+      <div className="px-5 pt-5 pb-3">
+        <h3 className="text-lg font-semibold">
           Issues
           <span className="text-sm font-normal text-muted-foreground ml-2">
             {issues.length} found
           </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
+        </h3>
+      </div>
+      <div className="p-0">
         <ScrollArea className="h-[600px]">
           <div className="p-4 space-y-6">
             {Object.entries(grouped).map(([type, typeIssues]) => (
               <div key={type}>
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Badge variant="outline">{TYPE_LABELS[type] || type}</Badge>
+                  <Badge variant="outline" className="rounded-lg">{TYPE_LABELS[type] || type}</Badge>
                   <span className="text-muted-foreground">
                     {typeIssues.length} issue{typeIssues.length !== 1 ? "s" : ""}
                   </span>
@@ -93,15 +88,20 @@ export function IssuesPanel({ lectureId }: { lectureId: string }) {
                     return (
                       <div
                         key={issue.id}
-                        className={`flex items-start gap-3 p-3 rounded-lg ${config.bg}`}
+                        className={`flex items-start gap-3 p-3 rounded-xl ${config.bg}`}
                       >
                         <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${config.color}`} />
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm">{issue.message}</p>
+                          {issue.suggestion && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              <span className="font-medium">Suggestion:</span> {issue.suggestion}
+                            </p>
+                          )}
                           {issue.auto_fixable && (
-                            <span className="text-xs text-muted-foreground mt-1 inline-block">
+                            <Badge variant="secondary" className="text-xs mt-1.5 rounded-lg">
                               Auto-fixable
-                            </span>
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -112,7 +112,7 @@ export function IssuesPanel({ lectureId }: { lectureId: string }) {
             ))}
           </div>
         </ScrollArea>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

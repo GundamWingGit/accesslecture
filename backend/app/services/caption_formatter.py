@@ -29,6 +29,7 @@ class CaptionFormatter:
                 display_name = (speaker_map or {}).get(seg.speaker, seg.speaker)
                 speaker_label = display_name
 
+            seg_min_conf = min((w.confidence for w in seg.words), default=0.92) if seg.words else 0.92
             chunks = self._split_into_caption_chunks(text)
 
             if not chunks:
@@ -44,6 +45,7 @@ class CaptionFormatter:
                     end_ms=seg.end_ms,
                     original_text=prefix + chunks[0],
                     speaker=seg.speaker,
+                    min_confidence=seg_min_conf,
                 ))
             else:
                 total_duration = seg.end_ms - seg.start_ms
@@ -68,6 +70,7 @@ class CaptionFormatter:
                         end_ms=chunk_end,
                         original_text=prefix + chunk,
                         speaker=seg.speaker,
+                        min_confidence=seg_min_conf,
                     ))
                     current_start = chunk_end
 

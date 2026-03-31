@@ -36,6 +36,7 @@ class CaptionBlock(BaseModel):
     original_text: str
     cleaned_text: str | None = None
     speaker: str | None = None
+    min_confidence: float = 0.92
 
 
 class TranscriptSegment(BaseModel):
@@ -75,8 +76,10 @@ class LectureResponse(BaseModel):
     title: str
     status: LectureStatus
     audio_url: str | None = None
+    video_url: str | None = None
     compliance_mode: ComplianceMode
     duration_seconds: float | None = None
+    user_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -115,6 +118,10 @@ class FixAllRequest(BaseModel):
     fix_formatting: bool = True
     fix_speakers: bool = True
     syllabus_context: str | None = None
+
+
+class CaptionUpdateBody(BaseModel):
+    text: str
 
 
 class ExportFormat(str, Enum):

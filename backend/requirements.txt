@@ -1,9 +1,9 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.18
-celery[redis]>=5.4.0
-redis>=5.2.0
 google-genai>=1.0.0
+slowapi>=0.1.9
+stripe>=8.0.0
 supabase>=2.11.0
 python-dotenv>=1.0.1
 pydantic>=2.10.0

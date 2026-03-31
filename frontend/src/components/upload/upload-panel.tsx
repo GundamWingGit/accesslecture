@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { Upload, FileAudio, X, Loader2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Upload, FileAudio, FileVideo, X, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { extractAudio, uploadToStorage, uploadVideoToStorage } from "@/lib/audio-extractor";
@@ -25,9 +25,9 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
   const accept = "audio/*,video/*,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.flac";
 
   const handleFile = useCallback((f: File) => {
-    const maxSize = 500 * 1024 * 1024; // 500MB
+    const maxSize = 500 * 1024 * 1024;
     if (f.size > maxSize) {
-      toast.error("File too large. Maximum size is 500MB.");
+      toast.error("File too large. Maximum size is 500 MB.");
       return;
     }
     setFile(f);
@@ -54,7 +54,7 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
 
     setUploading(true);
     try {
-      setStage("Extracting audio from video...");
+      setStage("Extracting audio...");
       setProgress(5);
 
       const audioFile = await extractAudio(file, (p) => {
@@ -82,7 +82,7 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
         videoUrl = await uploadVideoToStorage(file, tempId);
       }
 
-      setStage("Creating lecture record...");
+      setStage("Creating lecture...");
       setProgress(85);
 
       const lecture = await api.lectures.create({
@@ -93,7 +93,7 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
       });
 
       setProgress(100);
-      setStage("Processing started!");
+      setStage("Done!");
       toast.success("Lecture uploaded! Processing will begin automatically.");
       onComplete(lecture.id);
     } catch (err) {
@@ -103,19 +103,26 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
     }
   };
 
+  const isVideo = file?.type.startsWith("video/");
+  const FileIcon = isVideo ? FileVideo : FileAudio;
+
   return (
     <div className="max-w-2xl mx-auto">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Upload Lecture</CardTitle>
-          <CardDescription>
+      <div className="glass rounded-3xl overflow-hidden">
+        <div className="text-center px-6 pt-8 pb-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/10">
+            <Sparkles className="w-7 h-7 text-primary" />
+          </div>
+          <h2 className="text-2xl font-bold gradient-text">Upload Lecture</h2>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto mt-2">
             Upload a video or audio recording. We&apos;ll transcribe it, add speaker
             labels, generate compliant captions, and score its accessibility.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div>
-            <label htmlFor="lecture-title" className="block text-sm font-medium mb-2">
+          </p>
+        </div>
+
+        <div className="px-6 pb-6 space-y-5">
+          <div className="space-y-1.5">
+            <label htmlFor="lecture-title" className="block text-sm font-medium">
               Lecture Title
             </label>
             <input
@@ -123,8 +130,9 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Introduction to Machine Learning - Week 3"
-              className="w-full px-3 py-2 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="e.g. Introduction to Machine Learning — Week 3"
+              disabled={uploading}
+              className="flex h-11 w-full rounded-xl glass-subtle px-3.5 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:glow-ring disabled:cursor-not-allowed disabled:opacity-50 transition-shadow"
             />
           </div>
 
@@ -135,11 +143,12 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
             }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => !uploading && inputRef.current?.click()}
             className={`
-              border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all
-              ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/50"}
-              ${file ? "border-primary/30 bg-primary/5" : ""}
+              border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-200
+              ${uploading ? "pointer-events-none opacity-60" : "cursor-pointer"}
+              ${dragOver ? "border-primary bg-primary/5 scale-[1.01]" : "border-border/50 hover:border-primary/40 hover:bg-primary/[0.03]"}
+              ${file ? "border-primary/30 bg-primary/[0.03]" : ""}
             `}
           >
             <input
@@ -155,50 +164,61 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
 
             {file ? (
               <div className="flex items-center justify-center gap-3">
-                <FileAudio className="w-8 h-8 text-primary" />
-                <div className="text-left">
-                  <p className="font-medium">{file.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {(file.size / (1024 * 1024)).toFixed(1)} MB
-                  </p>
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
+                  <FileIcon className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-left min-w-0">
+                  <p className="font-medium text-sm truncate">{file.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-muted-foreground">
+                      {(file.size / (1024 * 1024)).toFixed(1)} MB
+                    </span>
+                    {isVideo && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-lg">
+                        Video — slides will be detected
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setFile(null);
                   }}
-                  className="p-1 rounded-full hover:bg-muted"
+                  className="p-1.5 rounded-full hover:bg-muted flex-shrink-0"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
             ) : (
               <>
-                <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-lg font-medium mb-1">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center mx-auto mb-3">
+                  <Upload className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="font-medium mb-1">
                   Drop your lecture file here
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Supports MP4, MP3, WAV, M4A, WebM, OGG, FLAC (max 500MB)
+                  MP4, MP3, WAV, M4A, WebM, OGG, FLAC &middot; max 500 MB
                 </p>
               </>
             )}
           </div>
 
           {uploading && (
-            <div className="space-y-2">
+            <div className="space-y-2 px-1">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">{stage}</span>
-                <span className="font-medium">{progress}%</span>
+                <span className="font-mono text-xs font-medium">{progress}%</span>
               </div>
-              <Progress value={progress} />
+              <Progress value={progress} className="h-1.5" />
             </div>
           )}
 
           <Button
             onClick={handleUpload}
             disabled={!file || !title.trim() || uploading}
-            className="w-full"
+            className="w-full h-12 rounded-xl btn-gradient text-base shadow-md"
             size="lg"
           >
             {uploading ? (
@@ -209,12 +229,12 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
             ) : (
               <>
                 <Upload className="w-4 h-4 mr-2" />
-                Upload & Process
+                Upload &amp; Process
               </>
             )}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

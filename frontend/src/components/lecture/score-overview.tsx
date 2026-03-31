@@ -1,15 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 
 function getScoreColor(score: number): string {
-  if (score >= 95) return "text-green-600";
-  if (score >= 80) return "text-yellow-600";
-  if (score >= 60) return "text-orange-500";
-  return "text-red-500";
+  if (score >= 95) return "text-green-600 dark:text-green-400";
+  if (score >= 80) return "text-yellow-600 dark:text-yellow-400";
+  if (score >= 60) return "text-orange-500 dark:text-orange-400";
+  return "text-red-500 dark:text-red-400";
 }
 
 function getProgressColor(score: number): string {
@@ -27,22 +26,20 @@ export function ScoreOverview({ lectureId }: { lectureId: string }) {
 
   if (isLoading || !score) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-muted rounded w-1/3" />
-            <div className="h-4 bg-muted rounded w-2/3" />
-          </div>
-        </CardContent>
-      </Card>
+      <div className="glass rounded-2xl p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-muted/50 rounded-lg w-1/3" />
+          <div className="h-4 bg-muted/50 rounded-lg w-2/3" />
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-4">
+    <div className="glass rounded-2xl overflow-hidden">
+      <div className="p-5 pb-4">
         <div className="flex items-center justify-between">
-          <CardTitle>Accessibility Score</CardTitle>
+          <h3 className="font-semibold">Accessibility Score</h3>
           <div className="text-right">
             <span className={`text-4xl font-bold ${getScoreColor(score.overall)}`}>
               {score.overall.toFixed(0)}%
@@ -50,8 +47,8 @@ export function ScoreOverview({ lectureId }: { lectureId: string }) {
             <p className="text-sm text-muted-foreground mt-1">{score.rating}</p>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      </div>
+      <div className="px-5 pb-5 space-y-4">
         {score.dimensions.map((dim) => (
           <div key={dim.id} className="space-y-1.5">
             <div className="flex items-center justify-between text-sm">
@@ -71,7 +68,7 @@ export function ScoreOverview({ lectureId }: { lectureId: string }) {
             )}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

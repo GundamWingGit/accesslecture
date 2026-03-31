@@ -7,10 +7,8 @@ class Settings(BaseSettings):
     supabase_key: str = ""
     supabase_service_role_key: str = ""
 
-    redis_url: str = "redis://localhost:6379/0"
-
-    # CORS: comma-separated exact origins; regex matches preview + production *.vercel.app
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # CORS: comma-separated exact origins; regex matches preview + production *.vercel.app + custom domains
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,https://accesslecture.com,https://www.accesslecture.com,https://accessiblelecture.com,https://www.accessiblelecture.com"
     cors_origin_regex: str = r"https://.*\.vercel\.app"
 
     # Optional override (Docker: /docs/compliance-rubric.json)
@@ -23,7 +21,7 @@ class Settings(BaseSettings):
 
     # Vertex AI / Gemini settings
     use_vertex_ai: bool = True
-    google_application_credentials: str = "gcp-credentials.json"
+    google_application_credentials: str = ""
     gcp_project_id: str = ""
     gcp_location: str = "us-central1"
     google_api_key: str = ""  # fallback for non-Vertex usage
@@ -41,6 +39,15 @@ class Settings(BaseSettings):
     sync_tolerance_ms: int = 500
     min_caption_duration_ms: int = 1333
     max_caption_duration_ms: int = 6000
+
+    # Stripe billing
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_pro_price_id: str = ""
+    stripe_portal_return_url: str = "https://accesslecture.com"
+
+    # Plan limits
+    free_lectures_per_month: int = 3
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

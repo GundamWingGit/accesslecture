@@ -1,0 +1,23 @@
+# Node / frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+
+# Python virtual environments
+backend/venv/
+backend/__pycache__/
+
+# Secrets (deployed via env vars, not baked into image)
+backend/gcp-credentials.json
+backend/.env
+
+# IDE / OS
+.git/
+.cursor/
+.agents/
+*.pyc
+__pycache__/
+
+# Docs not needed at build time (rubric IS needed — it's copied in Dockerfile)
+agent-transcripts/
+mcps/
+terminals/

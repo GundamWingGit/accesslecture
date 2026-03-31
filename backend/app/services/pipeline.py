@@ -1,17 +1,18 @@
 """
-Celery task pipeline for AccessLecture.
+Processing pipeline for AccessLecture.
 
 All AI operations go through the provider abstraction layer —
 no provider-specific imports appear here.  Swapping transcription
 from Gemini to Cloud Speech-to-Text (Phase 2) requires zero changes
 in this file; only the config value changes.
+
+These are plain functions invoked via FastAPI BackgroundTasks.
 """
 import logging
 import os
 import tempfile
 
 import httpx
-from celery import shared_task
 
 from app.models.schemas import LectureStatus
 from app.services.supabase_client import get_supabase
@@ -68,8 +69,7 @@ def _safe_unlink(*paths: str | None):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-@shared_task(bind=True, max_retries=2)
-def process_lecture_pipeline(self, lecture_id: str):
+def process_lecture_pipeline(lecture_id: str):
     """
     End-to-end lecture processing:
       1. Download media
@@ -87,7 +87,6 @@ def process_lecture_pipeline(self, lecture_id: str):
         from app.services.providers import (
             get_transcription_provider,
             get_visual_analysis_provider,
-            get_cleanup_provider,
         )
 
         settings = get_settings()
@@ -154,6 +153,7 @@ def process_lecture_pipeline(self, lecture_id: str):
                 "end_ms": cap.end_ms,
                 "original_text": cap.original_text,
                 "speaker": cap.speaker,
+                "min_confidence": cap.min_confidence,
             }).execute()
 
         # ---- 5. AI cleanup ----
@@ -170,13 +170,12 @@ def process_lecture_pipeline(self, lecture_id: str):
     except Exception as e:
         logger.exception("Pipeline failed for lecture %s", lecture_id)
         _update_lecture_status(lecture_id, LectureStatus.FAILED.value, 0, str(e)[:500])
-        raise self.retry(exc=e, countdown=60)
     finally:
         _safe_unlink(audio_path, video_path)
 
 
 # ---------------------------------------------------------------------------
-# Reusable sub-steps (used by both the main pipeline and standalone tasks)
+# Reusable sub-steps
 # ---------------------------------------------------------------------------
 
 def _run_cleanup_on_captions(lecture_id: str, mode: str):
@@ -232,11 +231,38 @@ def _run_scoring(lecture_id: str, duration_seconds: float | None = None):
     }).execute()
 
 
+def _fix_caption_formatting(lecture_id: str):
+    """Re-format captions to comply with line length and line count limits."""
+    from app.services.caption_formatter import CaptionFormatter
+
+    sb = get_supabase()
+    formatter = CaptionFormatter()
+
+    captions = (
+        sb.table("captions")
+        .select("*")
+        .eq("lecture_id", lecture_id)
+        .order("sequence")
+        .execute()
+    )
+
+    for cap in captions.data:
+        text = cap.get("cleaned_text") or cap["original_text"]
+        lines = text.split("\n")
+        needs_fix = any(len(line) > formatter.max_line_length for line in lines) or (
+            len(lines) > formatter.max_lines
+        )
+
+        if needs_fix:
+            chunks = formatter._split_into_caption_chunks(text.replace("\n", " "))
+            if chunks:
+                sb.table("captions").update({"cleaned_text": chunks[0]}).eq("id", cap["id"]).execute()
+
+
 # ---------------------------------------------------------------------------
-# Standalone Celery tasks (called from API endpoints)
+# Standalone operations (called from API endpoints via BackgroundTasks)
 # ---------------------------------------------------------------------------
 
-@shared_task
 def run_ai_cleanup(
     lecture_id: str,
     mode: str = "clean",
@@ -271,7 +297,6 @@ def run_ai_cleanup(
     _update_lecture_status(lecture_id, LectureStatus.COMPLETED.value, 100, "Cleanup complete")
 
 
-@shared_task
 def run_fix_all(
     lecture_id: str,
     mode: str = "clean",
@@ -299,7 +324,6 @@ def run_fix_all(
     _update_lecture_status(lecture_id, LectureStatus.COMPLETED.value, 100, "Fix All complete!")
 
 
-@shared_task
 def run_accessibility_scoring(lecture_id: str):
     sb = get_supabase()
     lecture = sb.table("lectures").select("duration_seconds").eq("id", lecture_id).execute()
@@ -307,9 +331,8 @@ def run_accessibility_scoring(lecture_id: str):
     _run_scoring(lecture_id, duration)
 
 
-@shared_task
 def run_video_ocr(lecture_id: str, video_url: str):
-    """Standalone task for video OCR via the VisualAnalysisProvider."""
+    """Standalone video OCR via the VisualAnalysisProvider."""
     _update_lecture_status(lecture_id, LectureStatus.TRANSCRIBING.value, 50, "Running video OCR…")
 
     video_path = None
@@ -332,31 +355,3 @@ def run_video_ocr(lecture_id: str, video_url: str):
         _update_lecture_status(lecture_id, LectureStatus.FAILED.value, 0, str(e)[:500])
     finally:
         _safe_unlink(video_path)
-
-
-def _fix_caption_formatting(lecture_id: str):
-    """Re-format captions to comply with line length and line count limits."""
-    from app.services.caption_formatter import CaptionFormatter
-
-    sb = get_supabase()
-    formatter = CaptionFormatter()
-
-    captions = (
-        sb.table("captions")
-        .select("*")
-        .eq("lecture_id", lecture_id)
-        .order("sequence")
-        .execute()
-    )
-
-    for cap in captions.data:
-        text = cap.get("cleaned_text") or cap["original_text"]
-        lines = text.split("\n")
-        needs_fix = any(len(line) > formatter.max_line_length for line in lines) or (
-            len(lines) > formatter.max_lines
-        )
-
-        if needs_fix:
-            chunks = formatter._split_into_caption_chunks(text.replace("\n", " "))
-            if chunks:
-                sb.table("captions").update({"cleaned_text": chunks[0]}).eq("id", cap["id"]).execute()

@@ -35,9 +35,10 @@ def _get_client() -> genai.Client:
     if _client is None:
         settings = get_settings()
         if settings.use_vertex_ai:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
-                settings.google_application_credentials
-            )
+            if settings.google_application_credentials:
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
+                    settings.google_application_credentials
+                )
             _client = genai.Client(
                 vertexai=True,
                 project=settings.gcp_project_id,
@@ -80,7 +81,7 @@ Return a JSON object with this exact schema:
       "text": "<exact spoken text with punctuation>",
       "speaker": "SPEAKER_0" | "SPEAKER_1" | null,
       "words": [
-        {"word": "<word>", "start_seconds": <float>, "end_seconds": <float>}
+        {"word": "<word>", "start_seconds": <float>, "end_seconds": <float>, "confidence": <float 0-1>}
       ]
     }
   ]
@@ -94,7 +95,11 @@ Rules:
 4. Timestamps must be precise to 0.1 s.
 5. Segments should be 5-30 s long, split at natural sentence/phrase boundaries.
 6. Include word-level timestamps in the words array.
-7. Return ONLY valid JSON — no markdown fences, no explanation."""
+7. For each word, include a confidence score (0-1) estimating transcription accuracy.
+   Use lower confidence (0.3-0.7) for unclear/mumbled speech, technical jargon, proper
+   nouns, or words you are uncertain about. Use high confidence (0.9-1.0) for clearly
+   spoken common words.
+8. Return ONLY valid JSON — no markdown fences, no explanation."""
 
 
 class GeminiTranscriptionProvider(TranscriptionProvider):
@@ -403,7 +408,7 @@ def _build_segments(data: dict) -> tuple[list[TranscriptSegment], dict]:
                     start_ms=int(w["start_seconds"] * 1000),
                     end_ms=int(w["end_seconds"] * 1000),
                     speaker=seg_data.get("speaker"),
-                    confidence=0.92,
+                    confidence=float(w.get("confidence", 0.92)),
                 )
             )
 

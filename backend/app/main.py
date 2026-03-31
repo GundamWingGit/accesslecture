@@ -1,8 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
-from app.routers import transcription, cleanup, scoring, lectures, export, courses
+from app.rate_limit import limiter
+from app.routers import transcription, cleanup, scoring, lectures, export, courses, billing
 
 settings = get_settings()
 
@@ -11,6 +14,16 @@ app = FastAPI(
     description="Compliance-first lecture accessibility processing engine",
     version="0.1.0",
 )
+
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Please try again later."},
+    )
 
 
 def _parse_cors_origins() -> list[str]:
@@ -32,6 +45,7 @@ app.include_router(cleanup.router, prefix="/api/cleanup", tags=["cleanup"])
 app.include_router(scoring.router, prefix="/api/scoring", tags=["scoring"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(courses.router, prefix="/api/courses", tags=["courses"])
+app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 
 
 @app.get("/api/health")
