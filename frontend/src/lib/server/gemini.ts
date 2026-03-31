@@ -1,7 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { config } from "./config";
-import { readFile, writeFile } from "fs/promises";
-import { existsSync } from "fs";
+import { readFile } from "fs/promises";
 
 // ---------------------------------------------------------------------------
 // Shared client (singleton)
@@ -9,27 +8,36 @@ import { existsSync } from "fs";
 
 let _client: GoogleGenAI | null = null;
 
-function ensureCredentialsFile() {
+function getGoogleAuthOptions() {
   if (config.googleCredentialsJson) {
-    const tmpPath = "/tmp/gcp-creds.json";
-    if (!existsSync(tmpPath)) {
-      require("fs").writeFileSync(tmpPath, config.googleCredentialsJson);
+    try {
+      const creds = JSON.parse(config.googleCredentialsJson);
+      return {
+        credentials: {
+          client_email: creds.client_email,
+          private_key: creds.private_key,
+        },
+      };
+    } catch (err) {
+      console.error("[gemini] Failed to parse GOOGLE_CREDENTIALS_JSON:", err);
     }
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
-  } else if (config.googleApplicationCredentials) {
+  }
+  if (config.googleApplicationCredentials) {
     process.env.GOOGLE_APPLICATION_CREDENTIALS =
       config.googleApplicationCredentials;
   }
+  return undefined;
 }
 
 function getClient(): GoogleGenAI {
   if (!_client) {
     if (config.useVertexAi) {
-      ensureCredentialsFile();
+      const authOptions = getGoogleAuthOptions();
       _client = new GoogleGenAI({
         vertexai: true,
         project: config.gcpProjectId,
         location: config.gcpLocation,
+        googleAuthOptions: authOptions,
       });
     } else {
       _client = new GoogleGenAI({ apiKey: config.googleApiKey });

@@ -1,0 +1,14 @@
+Consolidate to single Next.js server with full API routes
+
+Migrated entire Python backend into Next.js API Route Handlers:
+- Ported Gemini provider, pipeline, caption formatter, compliance scorer, LMS exporter to TypeScript
+- Created 28 API route handlers matching all previous FastAPI endpoints
+- Added server-side infrastructure (auth, supabase service role, rate limiting, config)
+- Frontend api.ts now uses relative /api/* URLs (no separate backend needed)
+- Added COOP/COEP headers for ffmpeg.wasm SharedArrayBuffer support
+- Added maxDuration=300 for Vercel Pro serverless function timeouts
+- Added GOOGLE_CREDENTIALS_JSON env var support for serverless deployments
+- Simplified Gemini transcription to segment-level confidence (fixes JSON overflow on long lectures)
+- All Gemini calls use responseMimeType: application/json for reliable output
+- Removed output:standalone (not needed for Vercel)
+- Single `npm run dev` now runs everything on localhost:3000
