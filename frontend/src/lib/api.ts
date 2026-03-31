@@ -100,6 +100,7 @@ export interface Lecture {
 export interface CreateLecture {
   title: string;
   audio_url: string;
+  video_url?: string;
   course_id?: string;
   compliance_mode?: string;
 }

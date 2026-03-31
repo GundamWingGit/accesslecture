@@ -66,6 +66,7 @@ class LectureCreate(BaseModel):
     title: str
     course_id: str | None = None
     audio_url: str
+    video_url: str | None = None
     compliance_mode: ComplianceMode = ComplianceMode.CLEAN
 
 

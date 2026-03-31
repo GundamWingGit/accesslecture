@@ -1,6 +1,5 @@
-# Production-style stack: no bind mounts, images built from Dockerfile.backend.
+# Production stack — CPU-only, all AI via Google Cloud APIs
 # Usage: docker compose -f docker-compose.prod.yml up -d --build
-# Requires NVIDIA Container Toolkit on the host for GPU services.
 services:
   redis:
     image: redis:7-alpine
@@ -19,42 +18,27 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       COMPLIANCE_RUBRIC_PATH: /docs/compliance-rubric.json
-    # Uncomment if using Vertex with a service account JSON file on the host:
-    # volumes:
-    #   - ./backend/gcp-credentials.json:/app/gcp-credentials.json:ro
+    volumes:
+      - ./backend/gcp-credentials.json:/app/gcp-credentials.json:ro
     depends_on:
       - redis
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   celery-worker:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
     env_file:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
       COMPLIANCE_RUBRIC_PATH: /docs/compliance-rubric.json
-    # volumes:
-    #   - ./backend/gcp-credentials.json:/app/gcp-credentials.json:ro
+    volumes:
+      - ./backend/gcp-credentials.json:/app/gcp-credentials.json:ro
     depends_on:
       - redis
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
 volumes:
   redis_data:

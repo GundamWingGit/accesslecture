@@ -61,9 +61,9 @@ async def update_syllabus(course_id: str, syllabus_text: str):
     """Upload syllabus text to improve AI caption accuracy for course-specific terminology."""
     sb = get_supabase()
 
-    # Extract vocabulary from syllabus using simple heuristics
-    from app.services.llm_service import extract_vocabulary_from_syllabus
-    vocab = await extract_vocabulary_from_syllabus(syllabus_text)
+    from app.services.providers import get_cleanup_provider
+    cleaner = get_cleanup_provider()
+    vocab = cleaner.extract_vocabulary(syllabus_text)
 
     result = sb.table("courses").update({
         "syllabus_text": syllabus_text,

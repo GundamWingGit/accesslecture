@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # Optional override (Docker: /docs/compliance-rubric.json)
     compliance_rubric_path: str = ""
 
+    # Provider selection — swap components without touching the pipeline
+    transcription_provider: str = "gemini"    # future: "speech_to_text", "faster_whisper"
+    visual_analysis_provider: str = "gemini"  # future: "video_intelligence"
+    cleanup_provider: str = "gemini"
+
     # Vertex AI / Gemini settings
     use_vertex_ai: bool = True
     google_application_credentials: str = "gcp-credentials.json"
@@ -24,11 +29,7 @@ class Settings(BaseSettings):
     google_api_key: str = ""  # fallback for non-Vertex usage
     gemini_model: str = "gemini-2.5-flash"
 
-    whisper_model_size: str = "large-v3"
-    whisper_device: str = "auto"
-    whisper_compute_type: str = "float16"
-
-    hf_token: str = ""
+    enable_video_ocr: bool = True
 
     max_audio_duration_seconds: int = 14400  # 4 hours
     max_upload_size_mb: int = 500

@@ -113,3 +113,32 @@ export async function uploadToStorage(
 
   return urlData.publicUrl;
 }
+
+/**
+ * Upload original video file to Supabase Storage for slide OCR.
+ * Returns the public URL. Stored in a separate "videos" bucket.
+ */
+export async function uploadVideoToStorage(
+  file: File,
+  lectureId: string,
+): Promise<string> {
+  const { getSupabaseBrowser } = await import("@/lib/supabase");
+  const supabase = getSupabaseBrowser();
+
+  const filePath = `lectures/${lectureId}/${file.name}`;
+
+  const { error } = await supabase.storage
+    .from("videos")
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+
+  if (error) throw new Error(`Video upload failed: ${error.message}`);
+
+  const { data: urlData } = supabase.storage
+    .from("videos")
+    .getPublicUrl(filePath);
+
+  return urlData.publicUrl;
+}

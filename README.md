@@ -2,39 +2,47 @@
 
 **Turn any lecture into an accessible course asset in minutes using AI.**
 
-A compliance-first, self-hostable platform that transforms lecture recordings into WCAG 2.1 / Section 508 compliant captions, transcripts, speaker labels, and accessibility scores. Built on open-source AI models, designed to run on university infrastructure.
+A compliance-first, self-hostable platform that transforms lecture recordings into WCAG 2.1 / Section 508 compliant captions, transcripts, speaker labels, and accessibility scores.
 
 ## Architecture
 
 ```
-Frontend (Next.js)  →  API Gateway  →  Processing Backend (Python/FastAPI)
-       ↕                                         ↕
-   Supabase                              faster-whisper + pyannote.audio
-(Auth, DB, Storage, Realtime)            Gemini Flash / Local LLM
+Frontend (Next.js on Vercel)  →  Backend (Python/FastAPI + Celery)
+         ↕                                    ↕
+     Supabase                        Google Cloud (Gemini)
+(Auth, DB, Storage, Realtime)    Transcription, Diarization,
+                                 Slide OCR, AI Cleanup, Scoring
 ```
 
 ### Frontend
-- **Next.js** (App Router) with Tailwind CSS + shadcn/ui
+- **Next.js 16** (App Router) with Tailwind CSS + shadcn/ui
 - **ffmpeg.wasm** for client-side video-to-audio extraction
-- Deployed on Vercel
+- Deployed on **Vercel**
 
 ### Processing Backend
-- **Python / FastAPI** processing engine
-- **faster-whisper** for transcription (Whisper large-v3, 4x faster)
-- **pyannote.audio** for speaker diarization
+- **Python / FastAPI** processing engine (CPU-only — no GPU needed)
+- **Google Gemini** (Vertex AI) for:
+  - Audio transcription with word-level timestamps
+  - Speaker diarization (multi-speaker identification)
+  - Video slide/screen OCR (on-screen text detection for accessibility)
+  - AI caption cleanup (grammar, filler removal, formatting)
+  - Accessibility scoring and suggestions
 - **Celery + Redis** for background job processing
-- Deployed via Docker (Google Cloud / university GPU servers)
+- Deployable anywhere via Docker — a $5/month VM is sufficient
 
 ### Data Layer
 - **Supabase** for PostgreSQL, Auth, Realtime, and file storage
+
+### Future: Zero-Cost Self-Hosting
+When university GPU infrastructure is available, the Google Cloud APIs can be swapped for open-source alternatives (`faster-whisper`, `pyannote.audio`, local LLMs) with no code changes outside the service layer.
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js 20+
 - Python 3.11+
-- Docker & Docker Compose
-- Redis
+- Redis (or Docker for containerized Redis)
+- Google Cloud project with Vertex AI enabled + service account key
 
 ### Frontend Development
 ```bash
@@ -49,33 +57,33 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
+cp .env.example .env     # fill in your values
 uvicorn app.main:app --reload
 ```
 
-### Run Everything with Docker (GPU host)
-Build context is the **repository root** (`Dockerfile.backend` includes `docs/compliance-rubric.json`).
-
+### Run Everything with Docker
 ```bash
 # Dev: bind-mounts backend + docs, Redis URL wired for Compose
 docker compose up --build
 
-# Production-style (no bind mounts; rebuild after code changes)
+# Production (CPU-only, all AI via Google Cloud)
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-### Connect Vercel → API + Supabase
+### Connect Vercel to Backend + Supabase
 1. Deploy the **frontend** on Vercel with **Root Directory** = `frontend`.
 2. In Vercel **Environment Variables**, set:
-   - `NEXT_PUBLIC_API_URL` — your **public** FastAPI base, e.g. `https://api.example.com/api` (must match how routes are mounted).
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from Supabase (anon/publishable key for the browser).
-3. Deploy the **backend** on a **GPU VM** (e.g. Google Compute Engine with NVIDIA + Docker) or your own server: use `docker-compose.prod.yml`, fill `backend/.env`, place `gcp-credentials.json` for Vertex if used, open HTTPS (reverse proxy recommended).
-4. CORS allows `localhost` and any `https://*.vercel.app` by default; add custom domains via `CORS_ORIGINS` in `backend/.env` if needed.
+   - `NEXT_PUBLIC_API_URL` — your FastAPI base URL, e.g. `https://api.example.com/api`
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from Supabase dashboard
+3. Deploy the **backend** on any server with Docker:
+   - Use `docker-compose.prod.yml`, fill `backend/.env`, place `gcp-credentials.json`
+4. CORS allows `localhost` and any `https://*.vercel.app` by default.
 
 See `scripts/vercel-env-template.txt` for a checklist.
 
 ## Compliance Standards
 
-This project is built around compliance from the ground up. See [`docs/compliance-rubric.json`](docs/compliance-rubric.json) for the full scoring rubric grounded in:
+Built around compliance from the ground up. See [`docs/compliance-rubric.json`](docs/compliance-rubric.json) for the full scoring rubric grounded in:
 
 - **WCAG 2.1 Level AA** (criteria 1.2.2, 1.2.3, 1.2.5)
 - **Section 508** (29 U.S.C. 794d)

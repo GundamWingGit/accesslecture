@@ -22,19 +22,12 @@ services:
     volumes:
       - ./backend:/app
       - ./docs:/docs
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   celery-worker:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
     env_file:
       - ./backend/.env
     environment:
@@ -45,13 +38,6 @@ services:
     volumes:
       - ./backend:/app
       - ./docs:/docs
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
 volumes:
   redis_data:

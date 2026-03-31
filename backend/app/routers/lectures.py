@@ -17,6 +17,7 @@ async def create_lecture(lecture: LectureCreate):
     data = {
         "title": lecture.title,
         "audio_url": lecture.audio_url,
+        "video_url": lecture.video_url,
         "status": LectureStatus.UPLOADED.value,
         "compliance_mode": lecture.compliance_mode.value,
         "course_id": lecture.course_id,

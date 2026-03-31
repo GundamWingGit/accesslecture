@@ -1,16 +1,13 @@
 # Build from repository root: docker build -f Dockerfile.backend -t accesslecture-backend .
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+# CPU-only: all heavy lifting is done by Google Cloud APIs (Speech-to-Text, Video Intelligence, Gemini)
+FROM python:3.11-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV COMPLIANCE_RUBRIC_PATH=/docs/compliance-rubric.json
 
-RUN apt-get update && apt-get install -y \
-    python3.11 python3.11-venv python3-pip \
-    ffmpeg libsndfile1 \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python
 
 WORKDIR /app
 

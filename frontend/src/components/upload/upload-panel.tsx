@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { extractAudio, uploadToStorage } from "@/lib/audio-extractor";
+import { extractAudio, uploadToStorage, uploadVideoToStorage } from "@/lib/audio-extractor";
 
 interface UploadPanelProps {
   onComplete: (lectureId: string) => void;
@@ -72,8 +72,15 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
 
       const tempId = crypto.randomUUID();
       const audioUrl = await uploadToStorage(audioFile, tempId, (pct) => {
-        setProgress(50 + Math.round(pct * 0.3));
+        setProgress(50 + Math.round(pct * 0.2));
       });
+
+      let videoUrl: string | undefined;
+      if (file.type.startsWith("video/")) {
+        setStage("Uploading video for slide detection...");
+        setProgress(72);
+        videoUrl = await uploadVideoToStorage(file, tempId);
+      }
 
       setStage("Creating lecture record...");
       setProgress(85);
@@ -81,6 +88,7 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
       const lecture = await api.lectures.create({
         title: title.trim(),
         audio_url: audioUrl,
+        video_url: videoUrl,
         compliance_mode: "clean",
       });
 
