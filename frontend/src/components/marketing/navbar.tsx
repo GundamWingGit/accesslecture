@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Sparkles, Menu, X } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -41,7 +40,6 @@ export function Navbar() {
           </nav>
 
           <div className="hidden md:flex items-center gap-2">
-            <ThemeToggle />
             <Link
               href="/dashboard"
               className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -57,7 +55,6 @@ export function Navbar() {
           </div>
 
           <div className="flex md:hidden items-center gap-2">
-            <ThemeToggle />
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="p-2 rounded-xl hover:bg-foreground/5 transition-colors"
