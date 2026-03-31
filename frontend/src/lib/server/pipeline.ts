@@ -143,27 +143,37 @@ export async function processLecturePipeline(lectureId: string) {
       { onConflict: "lecture_id" }
     );
 
-    // 4. Generate captions
+    // 4. Generate captions (batch insert for speed)
     await updateLectureStatus(lectureId, LectureStatus.CLEANING, 60, "Generating captions…");
     const captions = segmentsToCaptions(segments);
 
-    for (const cap of captions) {
-      await sb.from("captions").insert({
-        id: cap.id,
-        lecture_id: lectureId,
-        sequence: cap.sequence,
-        start_ms: cap.startMs,
-        end_ms: cap.endMs,
-        original_text: cap.originalText,
-        speaker: cap.speaker,
-        min_confidence: cap.minConfidence,
-      });
+    const captionRows = captions.map((cap) => ({
+      id: cap.id,
+      lecture_id: lectureId,
+      sequence: cap.sequence,
+      start_ms: cap.startMs,
+      end_ms: cap.endMs,
+      original_text: cap.originalText,
+      speaker: cap.speaker,
+      min_confidence: cap.minConfidence,
+    }));
+
+    const BATCH = 50;
+    for (let i = 0; i < captionRows.length; i += BATCH) {
+      await sb.from("captions").insert(captionRows.slice(i, i + BATCH));
     }
 
-    // 5. AI cleanup
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 70, "Running AI cleanup…");
-    await runCleanupOnCaptions(lectureId, complianceMode);
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 85, "AI cleanup complete");
+    // 5. Set cleaned_text = original_text (AI cleanup deferred to user request)
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 75, "Formatting captions…");
+    for (let i = 0; i < captionRows.length; i += BATCH) {
+      const batch = captionRows.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map((cap) =>
+          sb.from("captions").update({ cleaned_text: cap.original_text }).eq("id", cap.id)
+        )
+      );
+    }
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 85, "Captions ready");
 
     // 6. Score accessibility
     await updateLectureStatus(lectureId, LectureStatus.SCORING, 90, "Scoring accessibility…");
