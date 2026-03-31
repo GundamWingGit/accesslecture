@@ -1,62 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# Deploy AccessLecture API to Google Cloud Run
-#
-# Prerequisites:
-#   1. gcloud CLI installed and authenticated (gcloud auth login)
-#   2. Project set: gcloud config set project YOUR_PROJECT_ID
-#   3. backend/.env populated with real values
-#   4. backend/gcp-credentials.json in place (Vertex AI service account key)
-#
-# Usage:
-#   ./scripts/deploy-cloud-run.sh
-# ---------------------------------------------------------------------------
+PROJECT_ID="tonal-apex-491821-e9"
+REGION="us-central1"
+SERVICE="accesslecture"
+IMAGE="gcr.io/${PROJECT_ID}/${SERVICE}"
 
-PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project)}"
-REGION="${GCP_REGION:-us-central1}"
-SERVICE_NAME="accesslecture-api"
+echo "==> Building Docker image..."
+gcloud builds submit \
+  --tag "${IMAGE}" \
+  --project "${PROJECT_ID}" \
+  --substitutions="_NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}" \
+  .
 
-echo "Deploying $SERVICE_NAME to Cloud Run ($PROJECT_ID / $REGION)..."
-
-# Build and deploy from repository root using the existing Dockerfile
-gcloud run deploy "$SERVICE_NAME" \
-  --project "$PROJECT_ID" \
-  --region "$REGION" \
-  --source . \
-  --dockerfile Dockerfile.backend \
+echo "==> Deploying to Cloud Run..."
+gcloud run deploy "${SERVICE}" \
+  --image "${IMAGE}" \
+  --region "${REGION}" \
+  --project "${PROJECT_ID}" \
+  --platform managed \
   --allow-unauthenticated \
-  --timeout 3600 \
   --cpu 2 \
   --memory 1Gi \
-  --no-cpu-throttling \
-  --min-instances 0 \
-  --max-instances 4 \
-  --set-env-vars "SUPABASE_URL=$(grep SUPABASE_URL backend/.env | cut -d= -f2-)" \
-  --set-env-vars "SUPABASE_KEY=$(grep SUPABASE_KEY backend/.env | head -1 | cut -d= -f2-)" \
-  --set-env-vars "SUPABASE_SERVICE_ROLE_KEY=$(grep SUPABASE_SERVICE_ROLE_KEY backend/.env | cut -d= -f2-)" \
-  --set-env-vars "TRANSCRIPTION_PROVIDER=gemini" \
-  --set-env-vars "VISUAL_ANALYSIS_PROVIDER=gemini" \
-  --set-env-vars "CLEANUP_PROVIDER=gemini" \
+  --timeout 3600 \
+  --max-instances 10 \
+  --set-env-vars "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}" \
+  --set-env-vars "NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}" \
+  --set-env-vars "SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}" \
   --set-env-vars "USE_VERTEX_AI=true" \
-  --set-env-vars "GCP_PROJECT_ID=$PROJECT_ID" \
-  --set-env-vars "GCP_LOCATION=$REGION" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT_ID}" \
+  --set-env-vars "GCP_LOCATION=${REGION}" \
   --set-env-vars "GEMINI_MODEL=gemini-2.5-flash" \
   --set-env-vars "ENABLE_VIDEO_OCR=true" \
-  --set-env-vars "COMPLIANCE_MODE=clean" \
-  --set-env-vars "COMPLIANCE_RUBRIC_PATH=/docs/compliance-rubric.json"
+  --set-env-vars "COMPLIANCE_MODE=clean"
 
-SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
-  --project "$PROJECT_ID" \
-  --region "$REGION" \
-  --format "value(status.url)")
-
-echo ""
-echo "Deployed successfully!"
-echo "  API URL: $SERVICE_URL"
-echo "  Health:  $SERVICE_URL/api/health"
-echo ""
-echo "Next steps:"
-echo "  1. Set NEXT_PUBLIC_API_URL=$SERVICE_URL/api in Vercel env vars"
-echo "  2. Redeploy frontend on Vercel"
+echo "==> Done! Service URL:"
+gcloud run services describe "${SERVICE}" --region "${REGION}" --project "${PROJECT_ID}" --format="value(status.url)"

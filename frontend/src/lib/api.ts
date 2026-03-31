@@ -1,7 +1,5 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-
 async function getAuthToken(): Promise<string | null> {
   const sb = getSupabaseBrowser();
   const { data } = await sb.auth.getSession();
@@ -21,7 +19,7 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`/api${path}`, { ...options, headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || `API Error: ${res.status}`);
@@ -32,10 +30,10 @@ async function request<T>(
 // Lecture endpoints
 export const api = {
   lectures: {
-    list: () => request<Lecture[]>("/lectures/"),
+    list: () => request<Lecture[]>("/lectures"),
     get: (id: string) => request<Lecture>(`/lectures/${id}`),
     create: (data: CreateLecture) =>
-      request<Lecture>("/lectures/", {
+      request<Lecture>("/lectures", {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -91,19 +89,19 @@ export const api = {
   export: {
     vtt: async (lectureId: string, cleaned = true) => {
       const t = await getAuthToken();
-      return `${API_BASE}/export/${lectureId}/vtt?cleaned=${cleaned}&token=${t ?? ""}`;
+      return `/api/export/${lectureId}/vtt?cleaned=${cleaned}&token=${t ?? ""}`;
     },
     srt: async (lectureId: string, cleaned = true) => {
       const t = await getAuthToken();
-      return `${API_BASE}/export/${lectureId}/srt?cleaned=${cleaned}&token=${t ?? ""}`;
+      return `/api/export/${lectureId}/srt?cleaned=${cleaned}&token=${t ?? ""}`;
     },
     txt: async (lectureId: string, cleaned = true) => {
       const t = await getAuthToken();
-      return `${API_BASE}/export/${lectureId}/txt?cleaned=${cleaned}&token=${t ?? ""}`;
+      return `/api/export/${lectureId}/txt?cleaned=${cleaned}&token=${t ?? ""}`;
     },
     canvas: async (lectureId: string, cleaned = true) => {
       const t = await getAuthToken();
-      return `${API_BASE}/export/${lectureId}/canvas-package?cleaned=${cleaned}&token=${t ?? ""}`;
+      return `/api/export/${lectureId}/canvas-package?cleaned=${cleaned}&token=${t ?? ""}`;
     },
     bundle: (lectureId: string, formats: string[]) =>
       request(`/export/${lectureId}`, {

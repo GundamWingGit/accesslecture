@@ -38,6 +38,9 @@ yarn-error.log*
 .env.production.local
 !.env*.example
 
+# credentials
+gcp-credentials.json
+
 # vercel
 .vercel
 
