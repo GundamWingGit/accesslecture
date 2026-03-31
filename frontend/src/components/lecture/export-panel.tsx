@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useCallback } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   FileText,
@@ -9,6 +9,9 @@ import {
   FileJson,
   ShieldCheck,
   ShieldAlert,
+  Package,
+  Film,
+  Loader2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
@@ -63,6 +67,12 @@ export function ExportPanel({ lectureId }: { lectureId: string }) {
   const setReviewedAt = useAppStore((s) => s.setReviewedAt);
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [packageProgress, setPackageProgress] = useState<number | null>(null);
+
+  const { data: lecture } = useQuery({
+    queryKey: ["lecture", lectureId],
+    queryFn: () => api.lectures.get(lectureId),
+  });
 
   const confirmMutation = useMutation({
     mutationFn: () => api.lectures.confirmReview(lectureId),
@@ -74,6 +84,7 @@ export function ExportPanel({ lectureId }: { lectureId: string }) {
   });
 
   const isReviewed = !!reviewedAt;
+  const hasVideo = !!lecture?.video_url;
 
   const handleDownload = async (format: string) => {
     if (!isReviewed) {
@@ -89,6 +100,67 @@ export function ExportPanel({ lectureId }: { lectureId: string }) {
     const url = await urlBuilders[format]();
     window.open(url, "_blank");
   };
+
+  const handleCompletePackage = useCallback(async () => {
+    if (!isReviewed) { setConfirmOpen(true); return; }
+    try {
+      setPackageProgress(5);
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+
+      setPackageProgress(10);
+      const [vttUrl, srtUrl, txtUrl] = await Promise.all([
+        api.export.vtt(lectureId),
+        api.export.srt(lectureId),
+        api.export.txt(lectureId),
+      ]);
+
+      setPackageProgress(20);
+      const [vttRes, srtRes, txtRes] = await Promise.all([
+        fetch(vttUrl).then(r => r.text()),
+        fetch(srtUrl).then(r => r.text()),
+        fetch(txtUrl).then(r => r.text()),
+      ]);
+
+      const title = lecture?.title?.replace(/[^a-zA-Z0-9_-]/g, "_") || "lecture";
+      zip.file(`${title}.vtt`, vttRes);
+      zip.file(`${title}.srt`, srtRes);
+      zip.file(`${title}_transcript.txt`, txtRes);
+
+      setPackageProgress(40);
+
+      if (hasVideo) {
+        try {
+          const { url: mediaUrl } = await api.export.videoUrl(lectureId);
+          setPackageProgress(50);
+          const videoRes = await fetch(mediaUrl);
+          const videoBlob = await videoRes.blob();
+          const ext = mediaUrl.includes(".mp4") ? ".mp4" : mediaUrl.includes(".webm") ? ".webm" : ".mp4";
+          zip.file(`${title}${ext}`, videoBlob);
+          setPackageProgress(80);
+        } catch {
+          toast.error("Could not include video file in package");
+        }
+      } else {
+        setPackageProgress(80);
+      }
+
+      setPackageProgress(90);
+      const blob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${title}_complete_package.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setPackageProgress(100);
+      toast.success("Complete package downloaded!");
+    } catch (e) {
+      console.error("Package download failed:", e);
+      toast.error("Failed to create package");
+    } finally {
+      setTimeout(() => setPackageProgress(null), 1500);
+    }
+  }, [isReviewed, lectureId, lecture?.title, hasVideo]);
 
   return (
     <div className="glass rounded-2xl overflow-hidden">
@@ -186,6 +258,52 @@ export function ExportPanel({ lectureId }: { lectureId: string }) {
             );
           })}
         </div>
+
+        {isReviewed && (
+          <div className="border-t border-border/50 pt-4 space-y-3">
+            <h4 className="text-sm font-semibold">Complete Package</h4>
+            <div className="glass-subtle rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                  <Package className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm">
+                    {hasVideo ? "Video + Captions + Transcript" : "Captions + Transcript"}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Everything in one ZIP
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {hasVideo
+                  ? "Original video file with VTT captions, SRT subtitles, and plain text transcript bundled together."
+                  : "VTT captions, SRT subtitles, and plain text transcript bundled together."}
+              </p>
+              {packageProgress !== null && (
+                <div className="space-y-1">
+                  <Progress value={packageProgress} className="h-1.5" />
+                  <p className="text-xs text-muted-foreground font-mono">{Math.round(packageProgress)}%</p>
+                </div>
+              )}
+              <Button
+                className="w-full rounded-lg btn-gradient"
+                onClick={handleCompletePackage}
+                disabled={packageProgress !== null}
+              >
+                {packageProgress !== null ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : hasVideo ? (
+                  <Film className="w-3.5 h-3.5 mr-1.5" />
+                ) : (
+                  <Package className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                Download Complete Package
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

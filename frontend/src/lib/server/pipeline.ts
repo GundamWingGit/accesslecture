@@ -197,7 +197,24 @@ export async function processLecturePipeline(lectureId: string) {
 // Reusable sub-steps
 // ---------------------------------------------------------------------------
 
-async function runCleanupOnCaptions(lectureId: string, mode: string) {
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+async function runCleanupOnCaptions(
+  lectureId: string,
+  mode: string,
+  onProgress?: (done: number, total: number) => Promise<void>,
+  syllabusContext?: string | null
+) {
   const sb = getSupabase();
   const { data: captions } = await sb
     .from("captions")
@@ -205,18 +222,20 @@ async function runCleanupOnCaptions(lectureId: string, mode: string) {
     .eq("lecture_id", lectureId)
     .order("sequence");
 
-  for (const cap of captions ?? []) {
+  const total = captions?.length ?? 0;
+  for (let i = 0; i < total; i++) {
+    const cap = captions![i];
     try {
-      const cleaned = await cleanupSegment(
-        cap.original_text,
-        mode,
-        cap.speaker
+      const cleaned = await withTimeout(
+        cleanupSegment(cap.original_text, mode, cap.speaker, syllabusContext),
+        30_000
       );
       await sb.from("captions").update({ cleaned_text: cleaned }).eq("id", cap.id);
     } catch (e) {
       console.warn(`Cleanup failed for caption ${cap.id}:`, e);
       await sb.from("captions").update({ cleaned_text: cap.original_text }).eq("id", cap.id);
     }
+    if (onProgress) await onProgress(i + 1, total);
   }
 }
 
@@ -275,30 +294,43 @@ export async function runAiCleanup(
   mode = "clean",
   syllabusContext?: string | null
 ) {
-  await updateLectureStatus(lectureId, LectureStatus.CLEANING, 50, "Running AI cleanup…");
+  try {
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 10, "Running AI cleanup…");
 
-  const sb = getSupabase();
-  const { data: captions } = await sb
-    .from("captions")
-    .select("*")
-    .eq("lecture_id", lectureId)
-    .order("sequence");
+    const sb = getSupabase();
+    const { data: captions } = await sb
+      .from("captions")
+      .select("*")
+      .eq("lecture_id", lectureId)
+      .order("sequence");
 
-  for (const cap of captions ?? []) {
-    try {
-      const cleaned = await cleanupSegment(
-        cap.original_text,
-        mode,
-        cap.speaker,
-        syllabusContext
-      );
-      await sb.from("captions").update({ cleaned_text: cleaned }).eq("id", cap.id);
-    } catch (e) {
-      console.warn(`Cleanup failed for caption ${cap.id}:`, e);
+    const total = captions?.length ?? 0;
+    for (let i = 0; i < total; i++) {
+      const cap = captions![i];
+      try {
+        const cleaned = await withTimeout(
+          cleanupSegment(cap.original_text, mode, cap.speaker, syllabusContext),
+          30_000
+        );
+        await sb.from("captions").update({ cleaned_text: cleaned }).eq("id", cap.id);
+      } catch (e) {
+        console.warn(`Cleanup failed for caption ${cap.id}:`, e);
+        await sb.from("captions").update({ cleaned_text: cap.original_text }).eq("id", cap.id);
+      }
+      const pct = Math.round(10 + ((i + 1) / total) * 80);
+      await updateLectureStatus(lectureId, LectureStatus.CLEANING, pct, `Cleaning caption ${i + 1} of ${total}…`);
     }
-  }
 
-  await updateLectureStatus(lectureId, LectureStatus.COMPLETED, 100, "Cleanup complete");
+    await updateLectureStatus(lectureId, LectureStatus.COMPLETED, 100, "Cleanup complete");
+  } catch (e) {
+    console.error(`runAiCleanup failed for ${lectureId}:`, e);
+    await updateLectureStatus(
+      lectureId,
+      LectureStatus.FAILED,
+      0,
+      String(e instanceof Error ? e.message : e).slice(0, 500)
+    );
+  }
 }
 
 export async function runFixAll(
@@ -309,28 +341,46 @@ export async function runFixAll(
   _fixSpeakers = true,
   syllabusContext?: string | null
 ) {
-  await updateLectureStatus(lectureId, LectureStatus.CLEANING, 10, "Running Fix All…");
+  try {
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 10, "Running Fix All…");
 
-  if (fixGrammar) {
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 30, "Fixing grammar and filler…");
-    await runCleanupOnCaptions(lectureId, mode);
+    if (fixGrammar) {
+      await updateLectureStatus(lectureId, LectureStatus.CLEANING, 15, "Fixing grammar and filler…");
+      await runCleanupOnCaptions(
+        lectureId,
+        mode,
+        async (done, total) => {
+          const pct = Math.round(15 + (done / total) * 45);
+          await updateLectureStatus(lectureId, LectureStatus.CLEANING, pct, `Cleaning caption ${done} of ${total}…`);
+        },
+        syllabusContext
+      );
+    }
+
+    if (fixFormatting) {
+      await updateLectureStatus(lectureId, LectureStatus.CLEANING, 65, "Fixing formatting…");
+      await fixCaptionFormatting(lectureId);
+    }
+
+    await updateLectureStatus(lectureId, LectureStatus.SCORING, 80, "Re-scoring…");
+    const sb = getSupabase();
+    const { data: lectureRows } = await sb
+      .from("lectures")
+      .select("duration_seconds")
+      .eq("id", lectureId);
+    const duration = lectureRows?.[0]?.duration_seconds ?? null;
+    await runScoring(lectureId, duration);
+
+    await updateLectureStatus(lectureId, LectureStatus.COMPLETED, 100, "Fix All complete!");
+  } catch (e) {
+    console.error(`runFixAll failed for ${lectureId}:`, e);
+    await updateLectureStatus(
+      lectureId,
+      LectureStatus.FAILED,
+      0,
+      String(e instanceof Error ? e.message : e).slice(0, 500)
+    );
   }
-
-  if (fixFormatting) {
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 60, "Fixing formatting…");
-    await fixCaptionFormatting(lectureId);
-  }
-
-  await updateLectureStatus(lectureId, LectureStatus.SCORING, 80, "Re-scoring…");
-  const sb = getSupabase();
-  const { data: lectureRows } = await sb
-    .from("lectures")
-    .select("duration_seconds")
-    .eq("id", lectureId);
-  const duration = lectureRows?.[0]?.duration_seconds ?? null;
-  await runScoring(lectureId, duration);
-
-  await updateLectureStatus(lectureId, LectureStatus.COMPLETED, 100, "Fix All complete!");
 }
 
 export async function runAccessibilityScoring(lectureId: string) {

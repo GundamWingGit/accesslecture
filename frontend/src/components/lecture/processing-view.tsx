@@ -1,14 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, Mic, Users, Sparkles, BarChart3, Clock } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Mic, Sparkles, BarChart3, Clock, RotateCcw } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 
 const STAGE_ICONS: Record<string, typeof Mic> = {
   uploaded: Clock,
   transcribing: Mic,
-  diarizing: Users,
   cleaning: Sparkles,
   scoring: BarChart3,
 };
@@ -16,14 +16,19 @@ const STAGE_ICONS: Record<string, typeof Mic> = {
 const STAGE_LABELS: Record<string, string> = {
   uploaded: "Queued",
   transcribing: "Transcribing",
-  diarizing: "Speaker ID",
   cleaning: "AI Cleanup",
   scoring: "Scoring",
 };
 
-const STAGES = ["uploaded", "transcribing", "diarizing", "cleaning", "scoring"];
+const STAGES = ["uploaded", "transcribing", "cleaning", "scoring"];
 
 export function ProcessingView({ lectureId }: { lectureId: string }) {
+  const queryClient = useQueryClient();
+  const [showReset, setShowReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const lastPctRef = useRef<number | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { data: progress } = useQuery({
     queryKey: ["progress", lectureId],
     queryFn: () => api.lectures.progress(lectureId),
@@ -34,14 +39,36 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
   const status = progress?.status ?? "uploaded";
   const message = progress?.message ?? "Waiting to start...";
   const Icon = STAGE_ICONS[status] || Loader2;
-
   const currentIdx = STAGES.indexOf(status);
+
+  useEffect(() => {
+    if (pct !== lastPctRef.current) {
+      lastPctRef.current = pct;
+      setShowReset(false);
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = setTimeout(() => setShowReset(true), 90_000);
+    }
+    return () => { if (stallTimerRef.current) clearTimeout(stallTimerRef.current); };
+  }, [pct]);
+
+  async function handleReset() {
+    setResetting(true);
+    try {
+      await api.lectures.reset(lectureId);
+      queryClient.invalidateQueries({ queryKey: ["progress", lectureId] });
+      queryClient.invalidateQueries({ queryKey: ["lecture", lectureId] });
+    } catch (e) {
+      console.error("Reset failed:", e);
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <div className="glass rounded-3xl">
       <div className="p-8">
         <div className="text-center space-y-6">
-          <div className="w-18 h-18 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto w-[72px] h-[72px] shadow-lg shadow-primary/10">
+          <div className="rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto w-[72px] h-[72px] shadow-lg shadow-primary/10">
             <Icon className="w-9 h-9 text-primary animate-pulse" />
           </div>
 
@@ -79,6 +106,17 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
               );
             })}
           </div>
+
+          {showReset && (
+            <button
+              onClick={handleReset}
+              disabled={resetting}
+              className="glass px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
+            >
+              <RotateCcw className={`w-4 h-4 ${resetting ? "animate-spin" : ""}`} />
+              {resetting ? "Resetting…" : "Processing seems stuck — skip to results"}
+            </button>
+          )}
         </div>
       </div>
     </div>

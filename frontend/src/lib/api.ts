@@ -43,6 +43,8 @@ export const api = {
       request<ProcessingProgress>(`/lectures/${id}/progress`),
     confirmReview: (id: string) =>
       request<{ reviewed_at: string }>(`/lectures/${id}/confirm-review`, { method: "POST" }),
+    reset: (id: string) =>
+      request<{ status: string }>(`/lectures/${id}/reset`, { method: "POST" }),
   },
 
   transcript: {
@@ -108,6 +110,8 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ lecture_id: lectureId, formats, use_cleaned: true }),
       }),
+    videoUrl: (lectureId: string) =>
+      request<{ url: string }>(`/export/${lectureId}/video-url`, { method: "POST" }),
   },
   billing: {
     status: () => request<BillingStatus>("/billing/status"),

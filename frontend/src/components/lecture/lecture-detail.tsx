@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { MediaPlayer } from "./media-player";
+import { VideoPlayer } from "./video-player";
 import { ProcessingView } from "./processing-view";
 import { ScoreOverview } from "./score-overview";
 import { CaptionEditor } from "./caption-editor";
@@ -15,6 +16,7 @@ import { TranscriptViewer } from "./transcript-viewer";
 import { IssuesPanel } from "./issues-panel";
 import { ExportPanel } from "./export-panel";
 import { AIGuidancePanel } from "./ai-guidance-panel";
+import { ChatPanel } from "./chat-panel";
 
 interface LectureDetailProps {
   lectureId: string;
@@ -93,10 +95,11 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
         </div>
       ) : (
         <>
-          {/* Media player — always visible when lecture is completed */}
-          {lecture.audio_url && (
+          {lecture.video_url ? (
+            <VideoPlayer lecture={lecture} captions={captionsData?.captions} />
+          ) : lecture.audio_url ? (
             <MediaPlayer lecture={lecture} captions={captionsData?.captions} />
-          )}
+          ) : null}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
@@ -128,6 +131,8 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
               <ExportPanel lectureId={lectureId} />
             </TabsContent>
           </Tabs>
+
+          <ChatPanel lectureId={lectureId} />
         </>
       )}
     </div>

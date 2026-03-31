@@ -18,6 +18,7 @@ interface AppState {
   setPlaybackRate: (rate: number) => void;
 
   seekTo: (ms: number) => void;
+  seekToMs: number | null;
 
   activeCaptionId: string | null;
   setActiveCaptionId: (id: string | null) => void;
@@ -52,12 +53,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ playbackRate: rate });
   },
 
+  seekToMs: null,
   seekTo: (ms) => {
     const ws = get().wavesurfer;
     if (ws) {
       const duration = ws.getDuration();
       if (duration > 0) ws.seekTo(ms / 1000 / duration);
     }
+    set({ seekToMs: ms });
   },
 
   activeCaptionId: null,
