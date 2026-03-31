@@ -80,7 +80,7 @@ export function Comparison() {
         >
           <table className="w-full">
             <thead>
-              <tr className="border-b border-white/10">
+              <tr className="border-b border-border">
                 <th className="text-left text-sm font-medium text-muted-foreground p-4 w-1/3">
                   Feature
                 </th>
@@ -96,7 +96,7 @@ export function Comparison() {
               {rows.map((row, i) => (
                 <tr
                   key={row.feature}
-                  className={i < rows.length - 1 ? "border-b border-white/5" : ""}
+                  className={i < rows.length - 1 ? "border-b border-border/50" : ""}
                 >
                   <td className="text-sm p-4 text-muted-foreground">
                     {row.feature}

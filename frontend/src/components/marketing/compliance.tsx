@@ -39,7 +39,7 @@ export function Compliance() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1, duration: 0.5 }}
-              className="glass rounded-2xl p-6 text-center hover:bg-white/[0.06] transition-colors"
+              className="glass rounded-2xl p-6 text-center hover:bg-foreground/[0.03] transition-colors"
             >
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-green-500/5 flex items-center justify-center mx-auto mb-4">
                 <ShieldCheck className="w-6 h-6 text-green-500" />

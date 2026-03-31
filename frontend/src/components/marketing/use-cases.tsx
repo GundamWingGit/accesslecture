@@ -52,7 +52,7 @@ export function UseCases() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1, duration: 0.5 }}
-              className="glass rounded-2xl p-8 hover:bg-white/[0.06] transition-colors"
+              className="glass rounded-2xl p-8 hover:bg-foreground/[0.03] transition-colors"
             >
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-5">
                 <c.icon className="w-6 h-6 text-primary" />

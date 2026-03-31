@@ -45,7 +45,7 @@ export function Hero() {
               </Link>
               <a
                 href="#how-it-works"
-                className="glass px-6 py-3 text-base font-medium rounded-xl inline-flex items-center gap-2 hover:bg-white/10 transition-colors"
+                className="glass px-6 py-3 text-base font-medium rounded-xl inline-flex items-center gap-2 hover:bg-foreground/5 transition-colors"
               >
                 <Play className="w-4 h-4" />
                 See How It Works

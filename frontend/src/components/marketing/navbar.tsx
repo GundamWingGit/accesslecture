@@ -33,7 +33,7 @@ export function Navbar() {
               <a
                 key={link.href}
                 href={link.href}
-                className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-white/5"
+                className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-foreground/5"
               >
                 {link.label}
               </a>
@@ -60,7 +60,7 @@ export function Navbar() {
             <ThemeToggle />
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
-              className="p-2 rounded-xl hover:bg-white/5 transition-colors"
+              className="p-2 rounded-xl hover:bg-foreground/5 transition-colors"
               aria-label="Toggle menu"
             >
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -69,13 +69,13 @@ export function Navbar() {
         </div>
 
         {mobileOpen && (
-          <div className="md:hidden pb-4 border-t border-white/10 mt-2 pt-4 space-y-1">
+          <div className="md:hidden pb-4 border-t border-border mt-2 pt-4 space-y-1">
             {navLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
-                className="block px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-white/5"
+                className="block px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-foreground/5"
               >
                 {link.label}
               </a>

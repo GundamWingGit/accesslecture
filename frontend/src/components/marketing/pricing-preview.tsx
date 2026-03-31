@@ -104,7 +104,7 @@ export function PricingPreview() {
                 className={`block text-center py-3 px-6 rounded-xl text-sm font-medium transition-colors ${
                   plan.highlighted
                     ? "btn-gradient shadow-md"
-                    : "glass hover:bg-white/10"
+                    : "glass hover:bg-foreground/5"
                 }`}
               >
                 {plan.cta}

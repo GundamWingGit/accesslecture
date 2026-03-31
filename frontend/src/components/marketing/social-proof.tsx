@@ -13,7 +13,7 @@ const institutions = [
 
 export function SocialProof() {
   return (
-    <section className="py-12 border-y border-white/5">
+    <section className="py-12 border-y border-border/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.p
           initial={{ opacity: 0 }}

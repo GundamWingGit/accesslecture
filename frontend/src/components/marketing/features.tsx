@@ -72,7 +72,7 @@ export function Features() {
             <motion.div
               key={feature.title}
               variants={item}
-              className="glass rounded-2xl p-6 hover:bg-white/[0.06] transition-colors group"
+              className="glass rounded-2xl p-6 hover:bg-foreground/[0.03] transition-colors group"
             >
               <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-4 group-hover:from-primary/30 group-hover:to-primary/10 transition-colors">
                 <feature.icon className="w-5 h-5 text-primary" />
