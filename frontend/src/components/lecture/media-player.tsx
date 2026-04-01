@@ -88,6 +88,9 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
         setReady(true);
         setDuration(ws.getDuration() * 1000);
         ws.setPlaybackRate(useAppStore.getState().playbackRate);
+        if (lecture.video_url) {
+          ws.setVolume(0);
+        }
 
         const caps = captionsRef.current;
         if (caps?.length && regions) {
@@ -97,6 +100,7 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
 
       ws.on("timeupdate", (time: number) => {
         if (destroyed) return;
+        if (lecture.video_url) return;
         const ms = Math.round(time * 1000);
         setCurrentTimeMs(ms);
 
@@ -124,7 +128,15 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
         setWavesurfer(null);
       }
     };
-  }, [mediaUrl, setCurrentTimeMs, setIsPlaying, setActiveCaptionId, setWavesurfer, seekTo]);
+  }, [
+    mediaUrl,
+    lecture.video_url,
+    setCurrentTimeMs,
+    setIsPlaying,
+    setActiveCaptionId,
+    setWavesurfer,
+    seekTo,
+  ]);
 
   useEffect(() => {
     const regions = regionsRef.current;

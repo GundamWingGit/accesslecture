@@ -74,15 +74,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   togglePlay: () => {
+    const vid = get().videoElement;
     const ws = get().wavesurfer;
-    if (ws) {
-      ws.playPause();
+    // When both exist, drive the HTML5 video (picture + audio). WaveSurfer would
+    // play audio only and leave the video frozen on the first frame.
+    if (vid) {
+      if (vid.paused) {
+        ws?.pause();
+        ws?.setVolume(0);
+        void vid.play();
+      } else {
+        vid.pause();
+      }
       return;
     }
-    const vid = get().videoElement;
-    if (vid) {
-      if (vid.paused) vid.play();
-      else vid.pause();
+    if (ws) {
+      ws.playPause();
     }
   },
 

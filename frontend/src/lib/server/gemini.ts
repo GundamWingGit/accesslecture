@@ -1,8 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
+import { readFile, stat, unlink } from "fs/promises";
 import { config } from "./config";
-import { readFile, stat } from "fs/promises";
+import { extractAudioChunk, getAudioDurationSeconds } from "./extract-audio";
 
 const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB — use File API above this
+
+/** Long recordings: Gemini often stops ~8–10 min in one shot; chunk and merge. */
+const TRANSCRIBE_CHUNK_SEC = 480;
+const TRANSCRIBE_CHUNK_OVERLAP_SEC = 3;
 
 // ---------------------------------------------------------------------------
 // Shared client (singleton)
@@ -220,9 +225,57 @@ Rules:
    words you are uncertain about. Use high confidence (0.9-1.0) for clearly spoken text.
 7. Return ONLY valid JSON — no markdown fences, no explanation.`;
 
-export async function transcribe(
-  audioPath: string
-): Promise<TranscriptionResult> {
+export async function transcribe(audioPath: string): Promise<TranscriptionResult> {
+  const durationSec = await getAudioDurationSeconds(audioPath);
+  const step = TRANSCRIBE_CHUNK_SEC - TRANSCRIBE_CHUNK_OVERLAP_SEC;
+
+  if (durationSec <= 0 || durationSec <= TRANSCRIBE_CHUNK_SEC + 1) {
+    return transcribeOnce(audioPath);
+  }
+
+  const merged: TranscriptSegment[] = [];
+  let globalIdx = 0;
+
+  for (let start = 0; start < durationSec; start += step) {
+    const chunkLen = Math.min(TRANSCRIBE_CHUNK_SEC, durationSec - start);
+    if (chunkLen < 0.5) break;
+
+    const chunkPath = await extractAudioChunk(audioPath, start, chunkLen);
+    try {
+      const part = await transcribeOnce(chunkPath);
+      const offsetMs = Math.round(start * 1000);
+      for (const seg of part.segments) {
+        merged.push({
+          ...seg,
+          id: `seg-${globalIdx++}`,
+          startMs: seg.startMs + offsetMs,
+          endMs: seg.endMs + offsetMs,
+          words: seg.words.map((w) => ({
+            ...w,
+            startMs: w.startMs + offsetMs,
+            endMs: w.endMs + offsetMs,
+          })),
+        });
+      }
+      console.log(
+        `[gemini] Transcribed chunk ${start.toFixed(0)}s–${(start + chunkLen).toFixed(0)}s (${merged.length} segments total)`
+      );
+    } finally {
+      await unlink(chunkPath).catch(() => {});
+    }
+  }
+
+  return {
+    segments: merged,
+    info: {
+      language: "en",
+      languageProbability: 0.99,
+      durationSeconds: durationSec,
+    },
+  };
+}
+
+async function transcribeOnce(audioPath: string): Promise<TranscriptionResult> {
   const client = getClient();
   const mime = mediaMime(audioPath);
   const mediaPart = await getMediaPart(audioPath, mime);

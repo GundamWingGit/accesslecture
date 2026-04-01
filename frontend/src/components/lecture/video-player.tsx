@@ -63,6 +63,11 @@ export function VideoPlayer({ lecture, captions }: VideoPlayerProps) {
       const active = captions.find((c) => ms >= c.start_ms && ms < c.end_ms);
       if (active) setActiveCaptionId(active.id);
     }
+    const ws = useAppStore.getState().wavesurfer;
+    const dur = ws?.getDuration() ?? 0;
+    if (ws && dur > 0) {
+      ws.seekTo(v.currentTime / dur);
+    }
   }, [captions, setCurrentTimeMs, setActiveCaptionId]);
 
   const toggleCaptions = useCallback(() => {
