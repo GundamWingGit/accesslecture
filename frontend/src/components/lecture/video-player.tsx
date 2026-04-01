@@ -6,26 +6,6 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 import type { Lecture, CaptionBlock } from "@/lib/api";
 
-function formatVttTime(ms: number): string {
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  const s = Math.floor((ms % 60_000) / 1000);
-  const frac = ms % 1000;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${frac.toString().padStart(3, "0")}`;
-}
-
-function captionsToVttBlob(captions: CaptionBlock[]): string {
-  const lines = ["WEBVTT", ""];
-  for (const cap of captions) {
-    const text = cap.cleaned_text || cap.original_text;
-    lines.push(`${formatVttTime(cap.start_ms)} --> ${formatVttTime(cap.end_ms)}`);
-    lines.push(text);
-    lines.push("");
-  }
-  const blob = new Blob([lines.join("\n")], { type: "text/vtt" });
-  return URL.createObjectURL(blob);
-}
-
 interface VideoPlayerProps {
   lecture: Lecture;
   captions?: CaptionBlock[];
@@ -36,6 +16,7 @@ export function VideoPlayer({ lecture, captions }: VideoPlayerProps) {
   const [captionsVisible, setCaptionsVisible] = useState(true);
 
   const seekToMs = useAppStore((s) => s.seekToMs);
+  const currentTimeMs = useAppStore((s) => s.currentTimeMs);
   const playbackRate = useAppStore((s) => s.playbackRate);
   const setCurrentTimeMs = useAppStore((s) => s.setCurrentTimeMs);
   const setIsPlaying = useAppStore((s) => s.setIsPlaying);
@@ -44,16 +25,16 @@ export function VideoPlayer({ lecture, captions }: VideoPlayerProps) {
 
   const videoUrl = lecture.video_url;
 
-  const vttUrl = useMemo(() => {
+  const activeCaption = useMemo(() => {
     if (!captions?.length) return null;
-    return captionsToVttBlob(captions);
-  }, [captions]);
+    return (
+      captions.find((c) => currentTimeMs >= c.start_ms && currentTimeMs < c.end_ms) ?? null
+    );
+  }, [captions, currentTimeMs]);
 
-  useEffect(() => {
-    return () => {
-      if (vttUrl) URL.revokeObjectURL(vttUrl);
-    };
-  }, [vttUrl]);
+  const overlayText = activeCaption
+    ? activeCaption.cleaned_text || activeCaption.original_text
+    : null;
 
   useEffect(() => {
     const v = videoRef.current;
@@ -78,35 +59,15 @@ export function VideoPlayer({ lecture, captions }: VideoPlayerProps) {
     if (!v) return;
     const ms = Math.round(v.currentTime * 1000);
     setCurrentTimeMs(ms);
-  }, [setCurrentTimeMs]);
-
-  const captionsRef = useRef(captions);
-  captionsRef.current = captions;
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const v = videoRef.current;
-      if (!v) return;
-      const ms = Math.round(v.currentTime * 1000);
-      const caps = captionsRef.current;
-      if (caps) {
-        const active = caps.find((c) => ms >= c.start_ms && ms < c.end_ms);
-        if (active) setActiveCaptionId(active.id);
-      }
-    }, 100);
-    return () => clearInterval(interval);
-  }, [setActiveCaptionId]);
+    if (captions?.length) {
+      const active = captions.find((c) => ms >= c.start_ms && ms < c.end_ms);
+      if (active) setActiveCaptionId(active.id);
+    }
+  }, [captions, setCurrentTimeMs, setActiveCaptionId]);
 
   const toggleCaptions = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const track = v.textTracks[0];
-    if (track) {
-      const next = !captionsVisible;
-      track.mode = next ? "showing" : "hidden";
-      setCaptionsVisible(next);
-    }
-  }, [captionsVisible]);
+    setCaptionsVisible((v) => !v);
+  }, []);
 
   return (
     <div className="glass rounded-2xl overflow-hidden">
@@ -121,23 +82,29 @@ export function VideoPlayer({ lecture, captions }: VideoPlayerProps) {
           onEnded={() => setIsPlaying(false)}
           crossOrigin="anonymous"
           playsInline
-        >
-          {vttUrl && (
-            <track
-              kind="captions"
-              src={vttUrl}
-              srcLang="en"
-              label="English"
-              default
-            />
-          )}
-        </video>
-        <div className="absolute bottom-3 right-3">
+        />
+
+        {captionsVisible && overlayText && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-14 pt-8 bg-gradient-to-t from-black/85 via-black/40 to-transparent rounded-b-2xl">
+            <p
+              className="max-w-[min(92%,40rem)] text-center text-sm font-medium leading-snug text-white text-balance sm:text-base"
+              style={{
+                textShadow:
+                  "0 0 2px rgba(0,0,0,0.95), 0 1px 3px rgba(0,0,0,0.9), 0 2px 12px rgba(0,0,0,0.85)",
+              }}
+            >
+              {overlayText}
+            </p>
+          </div>
+        )}
+
+        <div className="absolute bottom-3 right-3 z-20">
           <Button
             variant="ghost"
             size="icon"
             className="w-8 h-8 rounded-lg bg-black/50 hover:bg-black/70 text-white"
             onClick={toggleCaptions}
+            title={captionsVisible ? "Hide captions" : "Show captions"}
           >
             {captionsVisible ? <Captions className="w-4 h-4" /> : <CaptionsOff className="w-4 h-4" />}
           </Button>

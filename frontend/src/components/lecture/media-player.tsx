@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 import type { Lecture, CaptionBlock } from "@/lib/api";
+import { WaveformCaptionOverlay } from "./waveform-caption-overlay";
 
 function formatTimecode(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -34,7 +35,6 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
   const currentTimeMs = useAppStore((s) => s.currentTimeMs);
   const isPlaying = useAppStore((s) => s.isPlaying);
   const playbackRate = useAppStore((s) => s.playbackRate);
-  const activeCaptionId = useAppStore((s) => s.activeCaptionId);
   const setCurrentTimeMs = useAppStore((s) => s.setCurrentTimeMs);
   const setIsPlaying = useAppStore((s) => s.setIsPlaying);
   const setPlaybackRate = useAppStore((s) => s.setPlaybackRate);
@@ -44,6 +44,11 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
 
   const captionsRef = useRef(captions);
   captionsRef.current = captions;
+
+  const captionsKey = useMemo(
+    () => captions?.map((c) => `${c.id}:${c.start_ms}:${c.end_ms}`).join("|") ?? "",
+    [captions]
+  );
 
   const mediaUrl = lecture.audio_url;
 
@@ -85,8 +90,8 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
         ws.setPlaybackRate(useAppStore.getState().playbackRate);
 
         const caps = captionsRef.current;
-        if (caps && regions) {
-          addCaptionRegions(regions, caps, null);
+        if (caps?.length && regions) {
+          addCaptionRegions(regions, caps);
         }
       });
 
@@ -123,9 +128,9 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
 
   useEffect(() => {
     const regions = regionsRef.current;
-    if (!regions || !ready || !captions) return;
-    addCaptionRegions(regions, captions, activeCaptionId);
-  }, [captions, activeCaptionId, ready]);
+    if (!regions || !ready || !captions?.length) return;
+    addCaptionRegions(regions, captions);
+  }, [captionsKey, ready, captions]);
 
   const togglePlay = useCallback(() => {
     wsRef.current?.playPause();
@@ -157,10 +162,15 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
   return (
     <div className="glass rounded-2xl overflow-hidden">
       <div className="px-5 pt-5 pb-2">
-        <div
-          ref={waveformRef}
-          className={`w-full rounded-xl overflow-hidden transition-opacity ${ready ? "opacity-100" : "opacity-30"}`}
-        />
+        <div className="relative">
+          {ready && (
+            <WaveformCaptionOverlay durationMs={duration} captions={captions} />
+          )}
+          <div
+            ref={waveformRef}
+            className={`w-full rounded-xl overflow-hidden transition-opacity ${ready ? "opacity-100" : "opacity-30"}`}
+          />
+        </div>
       </div>
 
       {!hideTransport && (
@@ -212,22 +222,14 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
 
 function addCaptionRegions(
   regions: import("wavesurfer.js/dist/plugins/regions.esm.js").default,
-  captions: CaptionBlock[],
-  activeCaptionId: string | null
+  captions: CaptionBlock[]
 ) {
   regions.clearRegions();
   for (const cap of captions) {
-    const text = cap.cleaned_text || cap.original_text;
-    const label = text.length > 35 ? text.slice(0, 35) + "…" : text;
-    const isActive = cap.id === activeCaptionId;
-
     regions.addRegion({
       start: cap.start_ms / 1000,
       end: cap.end_ms / 1000,
-      content: label,
-      color: isActive
-        ? "rgba(234, 179, 8, 0.2)"
-        : "rgba(59, 130, 246, 0.1)",
+      color: "rgba(59, 130, 246, 0.14)",
       drag: false,
       resize: false,
     });

@@ -4,13 +4,15 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import type { CaptionBlock } from "@/lib/api";
-
-interface Frame {
-  timeMs: number;
-  dataUrl: string;
-}
+import {
+  filmstripCacheKey,
+  getFilmstripFromCache,
+  saveFilmstripToCache,
+  type FilmstripFrame,
+} from "@/lib/filmstrip-cache";
 
 interface FilmstripTimelineProps {
+  lectureId: string;
   videoUrl: string;
   durationMs: number;
   captions?: CaptionBlock[];
@@ -20,8 +22,13 @@ const THUMB_W = 120;
 const THUMB_H = 68;
 const MAX_FRAMES = 60;
 
-export function FilmstripTimeline({ videoUrl, durationMs, captions }: FilmstripTimelineProps) {
-  const [frames, setFrames] = useState<Frame[]>([]);
+export function FilmstripTimeline({
+  lectureId,
+  videoUrl,
+  durationMs,
+  captions,
+}: FilmstripTimelineProps) {
+  const [frames, setFrames] = useState<FilmstripFrame[]>([]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -30,77 +37,103 @@ export function FilmstripTimeline({ videoUrl, durationMs, captions }: FilmstripT
   const activeCaptionId = useAppStore((s) => s.activeCaptionId);
 
   useEffect(() => {
-    if (!videoUrl || durationMs <= 0) return;
+    if (!videoUrl || durationMs <= 0 || !lectureId) return;
+
+    setFrames([]);
+    setLoading(true);
 
     let cancelled = false;
-    const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
-    video.muted = true;
-    video.preload = "auto";
-    video.src = videoUrl;
+    const cacheKey = filmstripCacheKey(lectureId, videoUrl, durationMs);
 
-    const durationSec = durationMs / 1000;
-    const interval = Math.max(2, durationSec / MAX_FRAMES);
-    const timestamps: number[] = [];
-    for (let t = 0; t < durationSec; t += interval) {
-      timestamps.push(t);
-    }
-
-    const extracted: Frame[] = [];
-    let idx = 0;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = THUMB_W;
-    canvas.height = THUMB_H;
-    const ctx = canvas.getContext("2d")!;
-
-    function extractNext() {
-      if (cancelled || idx >= timestamps.length) {
-        if (!cancelled) {
-          setFrames(extracted);
-          setLoading(false);
-        }
+    const run = async () => {
+      const cached = await getFilmstripFromCache(cacheKey);
+      if (cancelled) return;
+      if (cached?.length) {
+        setFrames(cached);
+        setLoading(false);
         return;
       }
-      video.currentTime = timestamps[idx];
-    }
 
-    video.addEventListener("seeked", () => {
-      if (cancelled) return;
-      ctx.drawImage(video, 0, 0, THUMB_W, THUMB_H);
-      extracted.push({
-        timeMs: Math.round(timestamps[idx] * 1000),
-        dataUrl: canvas.toDataURL("image/jpeg", 0.6),
+      setLoading(true);
+      const video = document.createElement("video");
+      video.crossOrigin = "anonymous";
+      video.muted = true;
+      video.preload = "auto";
+      video.src = videoUrl;
+
+      const durationSec = durationMs / 1000;
+      const interval = Math.max(2, durationSec / MAX_FRAMES);
+      const timestamps: number[] = [];
+      for (let t = 0; t < durationSec; t += interval) {
+        timestamps.push(t);
+      }
+
+      const extracted: FilmstripFrame[] = [];
+      let idx = 0;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = THUMB_W;
+      canvas.height = THUMB_H;
+      const ctx = canvas.getContext("2d")!;
+
+      function extractNext() {
+        if (cancelled || idx >= timestamps.length) {
+          if (!cancelled && extracted.length) {
+            setFrames(extracted);
+            setLoading(false);
+            void saveFilmstripToCache(cacheKey, extracted);
+          } else if (!cancelled) {
+            setLoading(false);
+          }
+          return;
+        }
+        video.currentTime = timestamps[idx];
+      }
+
+      const onSeeked = () => {
+        if (cancelled) return;
+        ctx.drawImage(video, 0, 0, THUMB_W, THUMB_H);
+        extracted.push({
+          timeMs: Math.round(timestamps[idx] * 1000),
+          dataUrl: canvas.toDataURL("image/jpeg", 0.6),
+        });
+        idx++;
+        extractNext();
+      };
+
+      video.addEventListener("seeked", onSeeked);
+      video.addEventListener("loadeddata", () => {
+        if (!cancelled) extractNext();
       });
-      idx++;
-      extractNext();
-    });
+      video.addEventListener("error", () => {
+        if (!cancelled) setLoading(false);
+      });
+    };
 
-    video.addEventListener("loadeddata", () => {
-      if (!cancelled) extractNext();
-    });
+    void run();
 
-    video.addEventListener("error", () => {
-      if (!cancelled) setLoading(false);
-    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lectureId, videoUrl, durationMs]);
 
-    return () => { cancelled = true; };
-  }, [videoUrl, durationMs]);
-
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect || durationMs <= 0) return;
-    const x = e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
-    const totalWidth = frames.length * (THUMB_W + 2);
-    const ratio = Math.max(0, Math.min(1, x / totalWidth));
-    seekTo(Math.round(ratio * durationMs));
-  }, [frames, durationMs, seekTo]);
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect || durationMs <= 0) return;
+      const x = e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
+      const totalWidth = frames.length * (THUMB_W + 2);
+      const ratio = Math.max(0, Math.min(1, x / totalWidth));
+      seekTo(Math.round(ratio * durationMs));
+    },
+    [frames, durationMs, seekTo]
+  );
 
   if (loading) {
     return (
       <div className="glass rounded-xl p-3 flex items-center justify-center h-[84px]">
         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground mr-2" />
-        <span className="text-xs text-muted-foreground">Generating filmstrip...</span>
+        <span className="text-xs text-muted-foreground">Generating filmstrip…</span>
       </div>
     );
   }

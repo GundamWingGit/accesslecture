@@ -54,6 +54,7 @@ export function TimelineEditor({ lecture, captions }: TimelineEditorProps) {
     <div className="space-y-2">
       {hasVideo && lecture.video_url && (
         <FilmstripTimeline
+          lectureId={lecture.id}
           videoUrl={lecture.video_url}
           durationMs={durationMs}
           captions={captions}
