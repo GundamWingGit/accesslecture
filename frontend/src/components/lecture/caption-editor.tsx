@@ -174,7 +174,16 @@ function CaptionRow({
           </Badge>
         )}
         {caption.speaker && (
-          <Badge variant="outline" className="text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+          <Badge
+            variant="secondary"
+            className="text-xs cursor-pointer hover:bg-primary/20 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              const event = new CustomEvent("speaker-rename-request", { detail: caption.speaker });
+              window.dispatchEvent(event);
+            }}
+            title={`Click to rename "${caption.speaker}"`}
+          >
             {caption.speaker}
           </Badge>
         )}
@@ -194,7 +203,7 @@ export function CaptionEditor({ lectureId }: { lectureId: string }) {
   const toggleDiff = useAppStore((s) => s.toggleDiff);
   const activeCaptionId = useAppStore((s) => s.activeCaptionId);
   const seekTo = useAppStore((s) => s.seekTo);
-  const wavesurfer = useAppStore((s) => s.wavesurfer);
+  const storeTogglePlay = useAppStore((s) => s.togglePlay);
   const queryClient = useQueryClient();
 
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
@@ -260,6 +269,18 @@ export function CaptionEditor({ lectureId }: { lectureId: string }) {
     },
   });
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const speaker = (e as CustomEvent).detail;
+      if (speaker) {
+        setRenameFrom(speaker);
+        setShowSpeakerRename(true);
+      }
+    };
+    window.addEventListener("speaker-rename-request", handler);
+    return () => window.removeEventListener("speaker-rename-request", handler);
+  }, []);
+
   const handleKeyboard = useCallback(
     (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
@@ -273,25 +294,19 @@ export function CaptionEditor({ lectureId }: { lectureId: string }) {
       const isEditable = (e.target as HTMLElement)?.isContentEditable;
       if (tag === "TEXTAREA" || tag === "INPUT" || isEditable) return;
 
+      const currentMs = useAppStore.getState().currentTimeMs;
+
       if (e.code === "Space") {
         e.preventDefault();
-        wavesurfer?.playPause();
+        storeTogglePlay();
       }
       if (e.code === "ArrowLeft") {
         e.preventDefault();
-        if (wavesurfer) {
-          const dur = wavesurfer.getDuration();
-          const cur = wavesurfer.getCurrentTime();
-          wavesurfer.seekTo(Math.max(0, cur - 5) / dur);
-        }
+        seekTo(Math.max(0, currentMs - 5000));
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
-        if (wavesurfer) {
-          const dur = wavesurfer.getDuration();
-          const cur = wavesurfer.getCurrentTime();
-          wavesurfer.seekTo(Math.min(dur, cur + 5) / dur);
-        }
+        seekTo(currentMs + 5000);
       }
       if (e.code === "ArrowUp" && data?.captions) {
         e.preventDefault();
@@ -306,7 +321,7 @@ export function CaptionEditor({ lectureId }: { lectureId: string }) {
         if (idx < captions.length - 1) seekTo(captions[idx + 1].start_ms);
       }
     },
-    [wavesurfer, data, activeCaptionId, seekTo, handleUndo, handleRedo]
+    [data, activeCaptionId, seekTo, handleUndo, handleRedo, storeTogglePlay]
   );
 
   useEffect(() => {

@@ -20,11 +20,13 @@ const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 interface MediaPlayerProps {
   lecture: Lecture;
   captions?: CaptionBlock[];
+  hideTransport?: boolean;
 }
 
-export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
+export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerProps) {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<import("wavesurfer.js").default | null>(null);
+  const regionsRef = useRef<import("wavesurfer.js/dist/plugins/regions.esm.js").default | null>(null);
   const [ready, setReady] = useState(false);
   const [muted, setMuted] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -32,11 +34,13 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
   const currentTimeMs = useAppStore((s) => s.currentTimeMs);
   const isPlaying = useAppStore((s) => s.isPlaying);
   const playbackRate = useAppStore((s) => s.playbackRate);
+  const activeCaptionId = useAppStore((s) => s.activeCaptionId);
   const setCurrentTimeMs = useAppStore((s) => s.setCurrentTimeMs);
   const setIsPlaying = useAppStore((s) => s.setIsPlaying);
   const setPlaybackRate = useAppStore((s) => s.setPlaybackRate);
   const setWavesurfer = useAppStore((s) => s.setWavesurfer);
   const setActiveCaptionId = useAppStore((s) => s.setActiveCaptionId);
+  const seekTo = useAppStore((s) => s.seekTo);
 
   const captionsRef = useRef(captions);
   captionsRef.current = captions;
@@ -50,6 +54,7 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
 
     (async () => {
       const WaveSurfer = (await import("wavesurfer.js")).default;
+      const RegionsPlugin = (await import("wavesurfer.js/dist/plugins/regions.esm.js")).default;
       if (destroyed) return;
 
       const ws = WaveSurfer.create({
@@ -61,9 +66,16 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
-        height: 64,
+        height: 80,
         normalize: true,
         url: mediaUrl,
+      });
+
+      const regions = ws.registerPlugin(RegionsPlugin.create());
+      regionsRef.current = regions;
+
+      regions.on("region-clicked", (region: { start: number }) => {
+        if (!destroyed) seekTo(Math.round(region.start * 1000));
       });
 
       ws.on("ready", () => {
@@ -71,6 +83,11 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
         setReady(true);
         setDuration(ws.getDuration() * 1000);
         ws.setPlaybackRate(useAppStore.getState().playbackRate);
+
+        const caps = captionsRef.current;
+        if (caps && regions) {
+          addCaptionRegions(regions, caps, null);
+        }
       });
 
       ws.on("timeupdate", (time: number) => {
@@ -98,10 +115,17 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
       if (wsRef.current) {
         wsRef.current.destroy();
         wsRef.current = null;
+        regionsRef.current = null;
         setWavesurfer(null);
       }
     };
-  }, [mediaUrl, setCurrentTimeMs, setIsPlaying, setActiveCaptionId, setWavesurfer]);
+  }, [mediaUrl, setCurrentTimeMs, setIsPlaying, setActiveCaptionId, setWavesurfer, seekTo]);
+
+  useEffect(() => {
+    const regions = regionsRef.current;
+    if (!regions || !ready || !captions) return;
+    addCaptionRegions(regions, captions, activeCaptionId);
+  }, [captions, activeCaptionId, ready]);
 
   const togglePlay = useCallback(() => {
     wsRef.current?.playPause();
@@ -130,14 +154,8 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
     setPlaybackRate(next);
   }, [playbackRate, setPlaybackRate]);
 
-  const activeCaptionText = captions?.find((c) => currentTimeMs >= c.start_ms && currentTimeMs < c.end_ms);
-  const displayText = activeCaptionText
-    ? activeCaptionText.cleaned_text || activeCaptionText.original_text
-    : "";
-
   return (
     <div className="glass rounded-2xl overflow-hidden">
-      {/* Waveform */}
       <div className="px-5 pt-5 pb-2">
         <div
           ref={waveformRef}
@@ -145,62 +163,73 @@ export function MediaPlayer({ lecture, captions }: MediaPlayerProps) {
         />
       </div>
 
-      {/* Live caption overlay */}
-      <div className="px-5 h-10 flex items-center justify-center">
-        {displayText && (
-          <p className="text-sm text-center text-muted-foreground truncate max-w-[80%]">
-            {activeCaptionText?.speaker && (
-              <span className="font-medium text-foreground mr-1.5">
-                {activeCaptionText.speaker}:
-              </span>
-            )}
-            {displayText}
-          </p>
-        )}
-      </div>
+      {!hideTransport && (
+        <div className="px-5 pb-5 pt-2 flex items-center gap-3">
+          <span className="text-xs font-mono text-muted-foreground w-20 text-right tabular-nums">
+            {formatTimecode(currentTimeMs)}
+          </span>
 
-      {/* Transport controls */}
-      <div className="px-5 pb-5 flex items-center gap-3">
-        <span className="text-xs font-mono text-muted-foreground w-20 text-right tabular-nums">
-          {formatTimecode(currentTimeMs)}
-        </span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="w-8 h-8 rounded-xl" onClick={() => skip(-5)} disabled={!ready}>
+              <SkipBack className="w-4 h-4" />
+            </Button>
+            <Button
+              size="icon"
+              className="w-11 h-11 rounded-full btn-gradient shadow-md"
+              onClick={togglePlay}
+              disabled={!ready}
+            >
+              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+            </Button>
+            <Button variant="ghost" size="icon" className="w-8 h-8 rounded-xl" onClick={() => skip(5)} disabled={!ready}>
+              <SkipForward className="w-4 h-4" />
+            </Button>
+          </div>
 
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="w-8 h-8 rounded-xl" onClick={() => skip(-5)} disabled={!ready}>
-            <SkipBack className="w-4 h-4" />
-          </Button>
-          <Button
-            size="icon"
-            className="w-11 h-11 rounded-full btn-gradient shadow-md"
-            onClick={togglePlay}
-            disabled={!ready}
-          >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-          </Button>
-          <Button variant="ghost" size="icon" className="w-8 h-8 rounded-xl" onClick={() => skip(5)} disabled={!ready}>
-            <SkipForward className="w-4 h-4" />
-          </Button>
+          <span className="text-xs font-mono text-muted-foreground w-20 tabular-nums">
+            {formatTimecode(duration)}
+          </span>
+
+          <div className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="w-8 h-8 rounded-xl" onClick={toggleMute} disabled={!ready}>
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs font-mono h-7 px-2 min-w-[3rem] rounded-lg"
+              onClick={cycleSpeed}
+              disabled={!ready}
+            >
+              {playbackRate}x
+            </Button>
+          </div>
         </div>
-
-        <span className="text-xs font-mono text-muted-foreground w-20 tabular-nums">
-          {formatTimecode(duration)}
-        </span>
-
-        <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="w-8 h-8 rounded-xl" onClick={toggleMute} disabled={!ready}>
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs font-mono h-7 px-2 min-w-[3rem] rounded-lg"
-            onClick={cycleSpeed}
-            disabled={!ready}
-          >
-            {playbackRate}x
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   );
+}
+
+function addCaptionRegions(
+  regions: import("wavesurfer.js/dist/plugins/regions.esm.js").default,
+  captions: CaptionBlock[],
+  activeCaptionId: string | null
+) {
+  regions.clearRegions();
+  for (const cap of captions) {
+    const text = cap.cleaned_text || cap.original_text;
+    const label = text.length > 35 ? text.slice(0, 35) + "…" : text;
+    const isActive = cap.id === activeCaptionId;
+
+    regions.addRegion({
+      start: cap.start_ms / 1000,
+      end: cap.end_ms / 1000,
+      content: label,
+      color: isActive
+        ? "rgba(234, 179, 8, 0.2)"
+        : "rgba(59, 130, 246, 0.1)",
+      drag: false,
+      resize: false,
+    });
+  }
 }

@@ -7,8 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
-import { MediaPlayer } from "./media-player";
 import { VideoPlayer } from "./video-player";
+import { TimelineEditor } from "./timeline-editor";
 import { ProcessingView } from "./processing-view";
 import { ScoreOverview } from "./score-overview";
 import { CaptionEditor } from "./caption-editor";
@@ -95,11 +95,13 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
         </div>
       ) : (
         <>
-          {lecture.video_url ? (
+          {lecture.video_url && (
             <VideoPlayer lecture={lecture} captions={captionsData?.captions} />
-          ) : lecture.audio_url ? (
-            <MediaPlayer lecture={lecture} captions={captionsData?.captions} />
-          ) : null}
+          )}
+
+          {(lecture.video_url || lecture.audio_url) && (
+            <TimelineEditor lecture={lecture} captions={captionsData?.captions} />
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">

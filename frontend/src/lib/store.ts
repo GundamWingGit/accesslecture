@@ -8,6 +8,9 @@ interface AppState {
   wavesurfer: WaveSurfer | null;
   setWavesurfer: (ws: WaveSurfer | null) => void;
 
+  videoElement: HTMLVideoElement | null;
+  setVideoElement: (el: HTMLVideoElement | null) => void;
+
   currentTimeMs: number;
   setCurrentTimeMs: (ms: number) => void;
 
@@ -19,6 +22,8 @@ interface AppState {
 
   seekTo: (ms: number) => void;
   seekToMs: number | null;
+
+  togglePlay: () => void;
 
   activeCaptionId: string | null;
   setActiveCaptionId: (id: string | null) => void;
@@ -40,6 +45,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   wavesurfer: null,
   setWavesurfer: (ws) => set({ wavesurfer: ws }),
 
+  videoElement: null,
+  setVideoElement: (el) => set({ videoElement: el }),
+
   currentTimeMs: 0,
   setCurrentTimeMs: (ms) => set({ currentTimeMs: ms }),
 
@@ -50,6 +58,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPlaybackRate: (rate) => {
     const ws = get().wavesurfer;
     if (ws) ws.setPlaybackRate(rate);
+    const vid = get().videoElement;
+    if (vid) vid.playbackRate = rate;
     set({ playbackRate: rate });
   },
 
@@ -61,6 +71,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (duration > 0) ws.seekTo(ms / 1000 / duration);
     }
     set({ seekToMs: ms });
+  },
+
+  togglePlay: () => {
+    const ws = get().wavesurfer;
+    if (ws) {
+      ws.playPause();
+      return;
+    }
+    const vid = get().videoElement;
+    if (vid) {
+      if (vid.paused) vid.play();
+      else vid.pause();
+    }
   },
 
   activeCaptionId: null,
