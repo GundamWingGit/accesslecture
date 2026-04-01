@@ -45,6 +45,8 @@ export const api = {
       request<{ reviewed_at: string }>(`/lectures/${id}/confirm-review`, { method: "POST" }),
     reset: (id: string) =>
       request<{ status: string }>(`/lectures/${id}/reset`, { method: "POST" }),
+    reprocess: (id: string) =>
+      request<{ status: string }>(`/lectures/${id}/reprocess`, { method: "POST" }),
   },
 
   transcript: {

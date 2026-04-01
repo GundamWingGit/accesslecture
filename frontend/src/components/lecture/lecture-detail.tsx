@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, ArrowLeft, RefreshCw } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { VideoPlayer } from "./video-player";
@@ -87,12 +88,7 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
       {isProcessing ? (
         <ProcessingView lectureId={lectureId} />
       ) : lecture.status === "failed" ? (
-        <div className="glass rounded-2xl border border-destructive/30 p-6 text-center">
-          <p className="text-destructive font-medium">Processing failed</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Please try uploading again or contact support.
-          </p>
-        </div>
+        <FailedView lectureId={lectureId} />
       ) : (
         <>
           {lecture.video_url && (
@@ -137,6 +133,40 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
           <ChatPanel lectureId={lectureId} />
         </>
       )}
+    </div>
+  );
+}
+
+function FailedView({ lectureId }: { lectureId: string }) {
+  const [reprocessing, setReprocessing] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleReprocess = async () => {
+    setReprocessing(true);
+    try {
+      await api.lectures.reprocess(lectureId);
+      toast.success("Reprocessing started");
+      queryClient.invalidateQueries({ queryKey: ["lecture", lectureId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reprocess");
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-2xl border border-destructive/30 p-6 text-center space-y-3">
+      <p className="text-destructive font-medium">Processing failed</p>
+      <p className="text-sm text-muted-foreground">
+        Something went wrong during processing. You can try again.
+      </p>
+      <Button onClick={handleReprocess} disabled={reprocessing} className="btn-gradient">
+        {reprocessing ? (
+          <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Reprocessing...</>
+        ) : (
+          <><RefreshCw className="w-4 h-4 mr-2" />Reprocess Lecture</>
+        )}
+      </Button>
     </div>
   );
 }
