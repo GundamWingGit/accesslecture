@@ -15,6 +15,7 @@ import {
   scoreCaptions,
   detectAllVisualReferences,
 } from "./compliance-scorer";
+import { extractAudioFromVideo, isVideoFile } from "./extract-audio";
 
 const LectureStatus = {
   UPLOADING: "uploading",
@@ -90,13 +91,24 @@ export async function processLecturePipeline(lectureId: string) {
     const videoUrl: string | null = lecture.video_url;
     const complianceMode: string = lecture.compliance_mode ?? "clean";
 
-    // 1. Download audio
-    await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 5, "Downloading audio…");
+    // 1. Download media file
+    await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 5, "Downloading media…");
     audioPath = await downloadFile(audioUrl);
 
-    // 2. Transcribe
+    // 2. Extract audio from video if needed (much smaller file for Gemini)
+    let transcriptionPath = audioPath;
+    let extractedAudioPath: string | null = null;
+    if (isVideoFile(audioPath)) {
+      await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 8, "Extracting audio track…");
+      extractedAudioPath = await extractAudioFromVideo(audioPath);
+      transcriptionPath = extractedAudioPath;
+    }
+
+    // 3. Transcribe
     await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 10, "Transcribing audio…");
-    const { segments, info } = await transcribe(audioPath);
+    const { segments, info } = await transcribe(transcriptionPath);
+
+    if (extractedAudioPath) await safeUnlink(extractedAudioPath);
 
     const durationSeconds = info.durationSeconds;
     await sb.from("lectures").update({ duration_seconds: durationSeconds }).eq("id", lectureId);

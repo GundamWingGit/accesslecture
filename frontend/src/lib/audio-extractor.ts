@@ -81,7 +81,17 @@ async function uploadWithResumable(
           onProgress?.(pct);
         },
         onSuccess: () => resolve(),
-        onError: (err) => reject(new Error(`Resumable upload failed: ${err.message}`)),
+        onError: (err) => {
+          const msg = err.message || String(err);
+          if (msg.includes("413") || msg.toLowerCase().includes("maximum size")) {
+            reject(new Error(
+              `File exceeds the storage upload limit. Please increase the "Global file size limit" ` +
+              `in your Supabase Dashboard → Project Settings → Storage.`
+            ));
+          } else {
+            reject(new Error(`Upload failed: ${msg}`));
+          }
+        },
       });
 
       upload.findPreviousUploads().then((prev) => {

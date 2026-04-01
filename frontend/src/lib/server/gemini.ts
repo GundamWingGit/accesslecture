@@ -1,6 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { config } from "./config";
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
+
+const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB — use File API above this
 
 // ---------------------------------------------------------------------------
 // Shared client (singleton)
@@ -38,12 +40,72 @@ function getClient(): GoogleGenAI {
         project: config.gcpProjectId,
         location: config.gcpLocation,
         googleAuthOptions: authOptions,
+        httpOptions: { timeout: 600_000 },
       });
     } else {
-      _client = new GoogleGenAI({ apiKey: config.googleApiKey });
+      _client = new GoogleGenAI({
+        apiKey: config.googleApiKey,
+        httpOptions: { timeout: 600_000 },
+      });
     }
   }
   return _client;
+}
+
+// ---------------------------------------------------------------------------
+// File API helpers for large media
+// ---------------------------------------------------------------------------
+
+async function uploadToFileApi(
+  filePath: string,
+  mimeType: string
+): Promise<{ uri: string; mimeType: string }> {
+  const client = getClient();
+  console.log(`[gemini] Uploading ${filePath} (${mimeType}) to File API...`);
+
+  const uploaded = await client.files.upload({
+    file: filePath,
+    config: { mimeType },
+  });
+
+  let file = uploaded;
+  const name = file.name!;
+  let attempts = 0;
+  while (file.state === "PROCESSING" && attempts < 60) {
+    await new Promise((r) => setTimeout(r, 5000));
+    file = await client.files.get({ name });
+    attempts++;
+  }
+
+  if (file.state === "FAILED") {
+    throw new Error(`File API processing failed for ${name}`);
+  }
+
+  console.log(`[gemini] File ready: ${file.uri} (state: ${file.state})`);
+  return { uri: file.uri!, mimeType: file.mimeType ?? mimeType };
+}
+
+async function getMediaPart(
+  filePath: string,
+  mimeType: string
+): Promise<{ inlineData: { data: string; mimeType: string } } | { fileData: { fileUri: string; mimeType: string } }> {
+  const fileInfo = await stat(filePath);
+
+  if (fileInfo.size > LARGE_FILE_THRESHOLD && !config.useVertexAi) {
+    try {
+      const uploaded = await uploadToFileApi(filePath, mimeType);
+      return { fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } };
+    } catch (e) {
+      console.warn("[gemini] File API upload failed, falling back to inline data:", e);
+    }
+  }
+
+  if (fileInfo.size > LARGE_FILE_THRESHOLD) {
+    console.log(`[gemini] Sending ${(fileInfo.size / 1024 / 1024).toFixed(1)}MB file inline (large file, 10min timeout)...`);
+  }
+
+  const bytes = await readFile(filePath);
+  return { inlineData: { data: bytes.toString("base64"), mimeType } };
 }
 
 function parseJson(raw: string): unknown {
@@ -162,8 +224,8 @@ export async function transcribe(
   audioPath: string
 ): Promise<TranscriptionResult> {
   const client = getClient();
-  const audioBytes = await readFile(audioPath);
   const mime = mediaMime(audioPath);
+  const mediaPart = await getMediaPart(audioPath, mime);
 
   const response = await client.models.generateContent({
     model: config.geminiModel,
@@ -171,7 +233,7 @@ export async function transcribe(
       {
         role: "user",
         parts: [
-          { inlineData: { data: audioBytes.toString("base64"), mimeType: mime } },
+          mediaPart,
           { text: "Transcribe this audio recording completely with timestamps and speaker labels." },
         ],
       },
@@ -281,8 +343,8 @@ export async function detectVisualText(
   videoPath: string
 ): Promise<SlideDetection[]> {
   const client = getClient();
-  const videoBytes = await readFile(videoPath);
   const mime = videoMime(videoPath);
+  const mediaPart = await getMediaPart(videoPath, mime);
 
   const response = await client.models.generateContent({
     model: config.geminiModel,
@@ -290,7 +352,7 @@ export async function detectVisualText(
       {
         role: "user",
         parts: [
-          { inlineData: { data: videoBytes.toString("base64"), mimeType: mime } },
+          mediaPart,
           { text: "Extract all on-screen text from this lecture video with timestamps." },
         ],
       },

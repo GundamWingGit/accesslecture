@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@google/genai", "stripe"],
+  serverExternalPackages: ["@google/genai", "stripe", "ffmpeg-static"],
   async headers() {
     return [
       {
