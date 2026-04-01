@@ -453,6 +453,82 @@ export async function detectVisualText(
   return detections;
 }
 
+/**
+ * Long videos: send evenly spaced JPEG frames instead of the full file (avoids Gemini stalls/timeouts).
+ */
+export async function detectVisualTextFromFrames(
+  framePaths: string[],
+  durationSeconds: number
+): Promise<SlideDetection[]> {
+  if (framePaths.length === 0) return [];
+
+  const client = getClient();
+  const buffers = await Promise.all(framePaths.map((p) => readFile(p)));
+  const n = buffers.length;
+  const dur = Math.max(1, durationSeconds);
+
+  const intro =
+    `This lecture is about ${dur.toFixed(0)} seconds long. You are given ${n} JPEG frames ` +
+    `in chronological order, sampled at roughly equal time intervals across the video. ` +
+    `Extract ALL visible on-screen text (slides, terminal, code, whiteboard). ` +
+    `Use start_seconds and end_seconds on the 0–${dur.toFixed(0)}s timeline. ` +
+    `Approximate timing: frame index j (0-based) is near time (j / ${Math.max(1, n - 1)}) * ${dur}s.`;
+
+  const parts: Array<
+    { text: string } | { inlineData: { mimeType: string; data: string } }
+  > = [{ text: intro }];
+  for (const buf of buffers) {
+    parts.push({
+      inlineData: { mimeType: "image/jpeg", data: buf.toString("base64") },
+    });
+  }
+
+  const response = await client.models.generateContent({
+    model: config.geminiModel,
+    contents: [{ role: "user", parts }],
+    config: {
+      systemInstruction: VISUAL_SYSTEM,
+      temperature: 0.1,
+      maxOutputTokens: 32768,
+      responseMimeType: "application/json",
+    },
+  });
+
+  let slides: Array<{
+    start_seconds: number;
+    end_seconds: number;
+    texts?: string[];
+    description?: string;
+  }>;
+
+  try {
+    slides = parseJson(response.text ?? "") as typeof slides;
+  } catch {
+    console.warn("[gemini] Failed to parse visual analysis JSON (frames)");
+    return [];
+  }
+
+  const detections: SlideDetection[] = [];
+  for (const slide of slides) {
+    const startMs = Math.round(slide.start_seconds * 1000);
+    const endMs = Math.round(slide.end_seconds * 1000);
+    for (const textLine of slide.texts ?? []) {
+      if (textLine.trim().length >= 3) {
+        detections.push({
+          text: textLine.trim(),
+          startMs,
+          endMs,
+          confidence: 0.85,
+          description: slide.description ?? "",
+        });
+      }
+    }
+  }
+
+  detections.sort((a, b) => a.startMs - b.startMs);
+  return detections;
+}
+
 export function groupSlides(
   detections: SlideDetection[]
 ): Array<{ startMs: number; endMs: number; texts: string[] }> {

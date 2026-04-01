@@ -27,6 +27,12 @@ export const config = {
   geminiModel: env("GEMINI_MODEL", "gemini-2.5-flash"),
 
   enableVideoOcr: envBool("ENABLE_VIDEO_OCR", true),
+  /** Beyond this duration (seconds), use sampled JPEG frames instead of sending the full video to Gemini (avoids multi-hour stalls). */
+  visualFullVideoMaxSeconds: envInt("VISUAL_FULL_VIDEO_MAX_SECONDS", 600),
+  /** Number of evenly spaced frames for long-video slide text detection. */
+  visualSampleFrameCount: envInt("VISUAL_SAMPLE_FRAME_COUNT", 18),
+  /** Max time for one visual-analysis Gemini call (ms). */
+  visualAnalysisTimeoutMs: envInt("VISUAL_ANALYSIS_TIMEOUT_MS", 240_000),
   complianceMode: env("COMPLIANCE_MODE", "clean"),
 
   maxCaptionLineLength: envInt("MAX_CAPTION_LINE_LENGTH", 42),

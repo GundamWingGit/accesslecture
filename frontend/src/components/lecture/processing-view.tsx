@@ -46,10 +46,14 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
       lastPctRef.current = pct;
       setShowReset(false);
       if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-      stallTimerRef.current = setTimeout(() => setShowReset(true), 90_000);
+      const slowVisual = (message || "").toLowerCase().includes("on-screen");
+      const stallMs = slowVisual ? 240_000 : 90_000;
+      stallTimerRef.current = setTimeout(() => setShowReset(true), stallMs);
     }
-    return () => { if (stallTimerRef.current) clearTimeout(stallTimerRef.current); };
-  }, [pct]);
+    return () => {
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    };
+  }, [pct, message]);
 
   async function handleReset() {
     setResetting(true);

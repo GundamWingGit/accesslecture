@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { stat } from "fs/promises";
+import { mkdir, readdir, stat } from "fs/promises";
 
 const FFMPEG_IO_BUFFER = 12 * 1024 * 1024;
 
@@ -68,6 +68,56 @@ export async function extractAudioFromVideo(
 export function isVideoFile(filePath: string): boolean {
   const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
   return ["mp4", "mov", "avi", "mkv", "webm"].includes(ext);
+}
+
+export interface VideoSampleFramesResult {
+  paths: string[];
+  dir: string;
+}
+
+/**
+ * Extract evenly spaced JPEG frames for long-video OCR (Gemini full-file video often stalls or times out).
+ */
+export async function extractVideoSampleFrames(
+  videoPath: string,
+  durationSec: number,
+  maxFrames: number
+): Promise<VideoSampleFramesResult> {
+  const n = Math.max(4, Math.min(24, maxFrames));
+  const dur = Math.max(1, durationSec);
+  const interval = Math.max(10, dur / n);
+  const fps = 1 / interval;
+  const outDir = join(tmpdir(), `al-vframes-${randomUUID()}`);
+  await mkdir(outDir, { recursive: true });
+  const pattern = join(outDir, "f%03d.jpg");
+  const ffmpeg = getFfmpegPath();
+
+  await new Promise<void>((resolve, reject) => {
+    execFile(
+      ffmpeg,
+      [
+        "-y",
+        "-i",
+        videoPath,
+        "-vf",
+        `fps=${fps},scale=1280:-1`,
+        "-frames:v",
+        String(n),
+        pattern,
+      ],
+      { timeout: 600_000, maxBuffer: FFMPEG_IO_BUFFER },
+      (err, _stdout, stderr) => {
+        if (err) {
+          console.error("[ffmpeg] sample frames:", stderr);
+          reject(new Error(`Frame extraction failed: ${err.message}`));
+        } else resolve();
+      }
+    );
+  });
+
+  const names = (await readdir(outDir)).filter((f) => /\.jpe?g$/i.test(f)).sort();
+  const paths = names.map((f) => join(outDir, f));
+  return { paths, dir: outDir };
 }
 
 /**

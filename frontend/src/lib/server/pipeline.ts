@@ -1,4 +1,4 @@
-import { writeFile, unlink } from "fs/promises";
+import { writeFile, unlink, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
@@ -7,6 +7,7 @@ import { config } from "./config";
 import {
   transcribe,
   detectVisualText,
+  detectVisualTextFromFrames,
   groupSlides,
   cleanupSegment,
 } from "./gemini";
@@ -15,7 +16,12 @@ import {
   scoreCaptions,
   detectAllVisualReferences,
 } from "./compliance-scorer";
-import { extractAudioFromVideo, isVideoFile } from "./extract-audio";
+import {
+  extractAudioFromVideo,
+  extractVideoSampleFrames,
+  getAudioDurationSeconds,
+  isVideoFile,
+} from "./extract-audio";
 
 const LectureStatus = {
   UPLOADING: "uploading",
@@ -114,13 +120,35 @@ export async function processLecturePipeline(lectureId: string) {
     await sb.from("lectures").update({ duration_seconds: durationSeconds }).eq("id", lectureId);
     await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 45, "Transcription complete");
 
-    // 3. Visual analysis (optional)
+    // 3. Visual analysis (optional) — full-video Gemini calls often stall on 30+ min files; use sampled frames.
     let slideTexts: Array<{ startMs: number; endMs: number; texts: string[] }> = [];
     if (config.enableVideoOcr && videoUrl) {
       try {
         await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 50, "Detecting on-screen text…");
         videoPath = await downloadFile(videoUrl);
-        const rawDetections = await detectVisualText(videoPath);
+        let dur = durationSeconds ?? 0;
+        if (dur <= 0) {
+          dur = await getAudioDurationSeconds(videoPath);
+        }
+        const useSampledFrames = dur > config.visualFullVideoMaxSeconds;
+
+        const rawDetections = await withTimeout(
+          useSampledFrames
+            ? (async () => {
+                const { paths, dir } = await extractVideoSampleFrames(
+                  videoPath,
+                  dur,
+                  config.visualSampleFrameCount
+                );
+                try {
+                  return await detectVisualTextFromFrames(paths, dur);
+                } finally {
+                  await rm(dir, { recursive: true, force: true }).catch(() => {});
+                }
+              })()
+            : detectVisualText(videoPath),
+          config.visualAnalysisTimeoutMs
+        );
         slideTexts = groupSlides(rawDetections);
       } catch (e) {
         console.warn("Video analysis failed (non-fatal):", e);
