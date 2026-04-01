@@ -19,13 +19,14 @@ export function CTA() {
           <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-primary/5 rounded-full blur-3xl" />
 
           <div className="relative">
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              Ready to make your lectures{" "}
-              <span className="gradient-text">accessible</span>?
+            <h2 className="text-4xl sm:text-5xl font-black tracking-tight leading-[1.05] mb-4 font-display">
+              Stop delivering captions.{" "}
+              <span className="gradient-text">Start delivering compliance.</span>
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto mb-8">
-              Join educators transforming their content with AI-powered
-              accessibility. Start for free — no credit card required.
+              Upload your first lecture and get back all ten deliverables — captions,
+              transcript, compliance report, certificate, and more. Free to start,
+              no credit card required.
             </p>
             <Link
               href="/dashboard"

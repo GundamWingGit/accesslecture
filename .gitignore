@@ -22,3 +22,4 @@ build/
 playbook_clean.txt
 gcp-credentials.json
 *-credentials.json
+.vercel

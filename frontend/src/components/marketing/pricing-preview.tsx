@@ -50,7 +50,7 @@ export function PricingPreview() {
           transition={{ duration: 0.5 }}
           className="text-center max-w-2xl mx-auto mb-16"
         >
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4 font-display">
             Simple, <span className="gradient-text">transparent</span> pricing
           </h2>
           <p className="text-muted-foreground text-lg">

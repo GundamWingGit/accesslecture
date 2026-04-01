@@ -6,7 +6,12 @@ import { json, error, withAuth } from "@/lib/server/api-helpers";
 import { processLecturePipeline } from "@/lib/server/pipeline";
 import { rateLimitByIp } from "@/lib/server/rate-limit";
 
-export const maxDuration = 300;
+/**
+ * Lecture processing runs in `after()` on the same serverless invocation (POST returns immediately).
+ * Must cover full pipeline: transcribe + optional OCR + captions + scoring.
+ * Vercel Pro max is 800s; Hobby is 10s (pipeline will not finish). Self-hosted `next start` has no Vercel cap.
+ */
+export const maxDuration = 800;
 
 function checkPlanLimits(userId: string) {
   return (async () => {

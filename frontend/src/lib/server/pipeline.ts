@@ -4,14 +4,19 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { getSupabase } from "./supabase";
 import { config } from "./config";
-import type { TranscriptSegment } from "./gemini";
 import {
   transcribe,
-  detectVisualText,
   detectVisualTextFromFrames,
   groupSlides,
   cleanupSegment,
 } from "./gemini";
+import { updateLectureStatus } from "./lecture-status";
+import { transcriptSegmentsFromDb } from "./transcript-segments";
+import { schedulePipelineContinuation } from "./internal-schedule";
+import {
+  uploadTranscriptionWorkAudio,
+  runPipelinePhase1Step,
+} from "./pipeline-phase1";
 import { segmentsToCaptions, splitIntoCaptionChunks } from "./caption-formatter";
 import {
   scoreCaptions,
@@ -34,21 +39,7 @@ const LectureStatus = {
   FAILED: "failed",
 } as const;
 
-function updateLectureStatus(
-  lectureId: string,
-  status: string,
-  progressPct = 0,
-  message = ""
-) {
-  const sb = getSupabase();
-  return sb
-    .from("lectures")
-    .update({ status, progress_pct: progressPct, progress_message: message })
-    .eq("id", lectureId)
-    .then(() => {});
-}
-
-async function downloadFile(url: string): Promise<string> {
+async function downloadFile(url: string, timeoutMs = 600_000): Promise<string> {
   let suffix = ".wav";
   for (const ext of [".mp3", ".m4a", ".mp4", ".webm", ".mov"]) {
     if (url.includes(ext)) {
@@ -58,7 +49,7 @@ async function downloadFile(url: string): Promise<string> {
   }
 
   const tmpPath = join(tmpdir(), `al-${randomUUID()}${suffix}`);
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await writeFile(tmpPath, buf);
@@ -71,27 +62,6 @@ async function safeUnlink(...paths: (string | null | undefined)[]) {
       try { await unlink(p); } catch { /* ignore */ }
     }
   }
-}
-
-/** Rebuild typed segments from transcripts.segments JSON (Supabase snake_case). */
-export function transcriptSegmentsFromDb(segments: unknown): TranscriptSegment[] {
-  if (!Array.isArray(segments)) return [];
-  return segments.map((s: Record<string, unknown>) => ({
-    id: String(s.id ?? ""),
-    startMs: Number(s.start_ms ?? 0),
-    endMs: Number(s.end_ms ?? 0),
-    text: String(s.text ?? ""),
-    speaker: (s.speaker as string | null) ?? null,
-    words: Array.isArray(s.words)
-      ? s.words.map((w: Record<string, unknown>) => ({
-          word: String(w.word ?? ""),
-          startMs: Number(w.start_ms ?? 0),
-          endMs: Number(w.end_ms ?? 0),
-          speaker: (w.speaker as string | null) ?? null,
-          confidence: Number(w.confidence ?? 0.92),
-        }))
-      : [],
-  }));
 }
 
 /**
@@ -193,54 +163,6 @@ export async function processLecturePipelineAfterTranscript(lectureId: string) {
   }
 }
 
-/**
- * On Vercel, schedule phase 2 so it runs in a new serverless invocation (new 800s budget).
- * Locally, runs phase 2 in-process.
- */
-async function schedulePipelineContinuation(lectureId: string) {
-  if (process.env.VERCEL !== "1") {
-    await processLecturePipelineAfterTranscript(lectureId);
-    return;
-  }
-
-  const base =
-    process.env.VERCEL_URL != null
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-
-  const secret = config.pipelineInternalSecret;
-  if (!base || !secret) {
-    console.error("[pipeline] Vercel: set VERCEL_URL (auto), NEXT_PUBLIC_APP_URL, and PIPELINE_INTERNAL_SECRET");
-    await updateLectureStatus(
-      lectureId,
-      LectureStatus.FAILED,
-      0,
-      "Server configuration: set PIPELINE_INTERNAL_SECRET and NEXT_PUBLIC_APP_URL in Vercel (Project → Settings → Environment Variables)."
-    );
-    return;
-  }
-
-  const res = await fetch(`${base}/api/internal/pipeline-continue`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify({ lectureId }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("[pipeline] pipeline-continue:", res.status, text);
-    await updateLectureStatus(
-      lectureId,
-      LectureStatus.FAILED,
-      0,
-      `Could not start caption step (${res.status}). Check logs or use Reprocess.`
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Main pipeline (phase 1: transcribe + optional OCR + store transcript; then phase 2)
 // ---------------------------------------------------------------------------
@@ -279,6 +201,54 @@ export async function processLecturePipeline(lectureId: string) {
       transcriptionPath = extractedAudioPath;
     }
 
+    const durationSec = await getAudioDurationSeconds(transcriptionPath);
+    const isLongAudio = durationSec > config.transcribeChunkSec + 1;
+
+    if (isLongAudio) {
+      await updateLectureStatus(
+        lectureId,
+        LectureStatus.TRANSCRIBING,
+        10,
+        "Uploading audio for long-form transcription…"
+      );
+      const workAudioUrl = await uploadTranscriptionWorkAudio(lectureId, transcriptionPath);
+      await sb
+        .from("lectures")
+        .update({
+          duration_seconds: durationSec,
+          pipeline_checkpoint: {
+            stage: "chunks",
+            workAudioUrl,
+            durationSec,
+            chunkState: null,
+            gapCheckpoint: null,
+          } as unknown as Record<string, unknown>,
+        })
+        .eq("id", lectureId);
+      await sb.from("transcripts").upsert(
+        {
+          lecture_id: lectureId,
+          segments: [],
+          raw_text: "",
+          speaker_map: {},
+          slide_texts: [],
+        },
+        { onConflict: "lecture_id" }
+      );
+      await updateLectureStatus(
+        lectureId,
+        LectureStatus.TRANSCRIBING,
+        10,
+        "Transcribing audio (this may take many steps for long lectures)…"
+      );
+      if (extractedAudioPath) await safeUnlink(extractedAudioPath);
+      await safeUnlink(audioPath);
+      extractedAudioPath = null;
+      audioPath = null;
+      await runPipelinePhase1Step(lectureId);
+      return;
+    }
+
     // 3. Transcribe (per-chunk progress keeps DB fresh for UI + resets stall timer on Vercel)
     await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 10, "Transcribing audio…");
     const { segments, info } = await transcribe(transcriptionPath, {
@@ -302,33 +272,38 @@ export async function processLecturePipeline(lectureId: string) {
     await sb.from("lectures").update({ duration_seconds: durationSeconds }).eq("id", lectureId);
     await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 45, "Transcription complete");
 
-    // 3. Visual analysis (optional) — full-video Gemini calls often stall on 30+ min files; use sampled frames.
+    // 3. Visual analysis (optional) — always use sampled JPEG frames. Sending the full video to Gemini
+    // routinely hangs on Vercel (huge inline payloads / long encode); short lectures used full-file before.
     let slideTexts: Array<{ startMs: number; endMs: number; texts: string[] }> = [];
     if (config.enableVideoOcr && videoUrl) {
       try {
-        await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 50, "Detecting on-screen text…");
-        videoPath = await downloadFile(videoUrl);
+        await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 48, "Downloading video for slide detection…");
+        videoPath = await downloadFile(videoUrl, config.visualVideoDownloadTimeoutMs);
         let dur = durationSeconds ?? 0;
         if (dur <= 0) {
           dur = await getAudioDurationSeconds(videoPath);
         }
-        const useSampledFrames = dur > config.visualFullVideoMaxSeconds;
 
+        await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 49, "Extracting sample frames…");
         const rawDetections = await withTimeout(
-          useSampledFrames
-            ? (async () => {
-                const { paths, dir } = await extractVideoSampleFrames(
-                  videoPath,
-                  dur,
-                  config.visualSampleFrameCount
-                );
-                try {
-                  return await detectVisualTextFromFrames(paths, dur);
-                } finally {
-                  await rm(dir, { recursive: true, force: true }).catch(() => {});
-                }
-              })()
-            : detectVisualText(videoPath),
+          (async () => {
+            const { paths, dir } = await extractVideoSampleFrames(
+              videoPath,
+              dur,
+              config.visualSampleFrameCount
+            );
+            try {
+              await updateLectureStatus(
+                lectureId,
+                LectureStatus.TRANSCRIBING,
+                50,
+                "Detecting on-screen text…"
+              );
+              return await detectVisualTextFromFrames(paths, dur);
+            } finally {
+              await rm(dir, { recursive: true, force: true }).catch(() => {});
+            }
+          })(),
           config.visualAnalysisTimeoutMs
         );
         slideTexts = groupSlides(rawDetections);

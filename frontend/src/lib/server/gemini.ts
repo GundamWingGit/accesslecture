@@ -148,6 +148,18 @@ export interface TranscriptionResult {
   };
 }
 
+/** Progress for long transcription (chunked + optional gap fill). */
+export type TranscribeProgress = {
+  phase: "chunk" | "gap_fill";
+  current: number;
+  total: number;
+  message: string;
+};
+
+export type TranscribeOptions = {
+  onProgress?: (p: TranscribeProgress) => void | Promise<void>;
+};
+
 export interface SlideDetection {
   text: string;
   startMs: number;
@@ -244,12 +256,180 @@ function trimSegmentFromCut(seg: TranscriptSegment, cutAbsMs: number): Transcrip
   };
 }
 
-async function fillTranscriptionGaps(
+function collectGapFillSlices(
+  gaps: { startMs: number; endMs: number }[],
+  maxFillSec: number
+): { startMs: number; lenSec: number }[] {
+  const slices: { startMs: number; lenSec: number }[] = [];
+  for (const g of gaps) {
+    let pos = g.startMs;
+    while (pos < g.endMs - 500) {
+      const remainingMs = g.endMs - pos;
+      const lenSec = Math.min(remainingMs / 1000, maxFillSec);
+      if (lenSec < 1.5) break;
+      slices.push({ startMs: pos, lenSec });
+      pos += lenSec * 1000;
+    }
+  }
+  return slices;
+}
+
+function countTranscribeChunks(
+  durationSec: number,
+  chunkSec: number,
+  overlapSec: number
+): number {
+  const step = chunkSec - overlapSec;
+  let n = 0;
+  for (let start = 0; start < durationSec; start += step) {
+    const chunkLen = Math.min(chunkSec, durationSec - start);
+    if (chunkLen < 0.5) break;
+    n++;
+  }
+  return Math.max(1, n);
+}
+
+/** Resumable main transcribe loop (multi–serverless-invocation). */
+export type TranscribeMainChunkState = {
+  nextStartSec: number;
+  /** Chunks fully processed (0 = about to do first chunk). */
+  chunksCompleted: number;
+  merged: TranscriptSegment[];
+  globalIdx: number;
+};
+
+/**
+ * Process up to `maxChunks` windows of the long-audio transcribe loop, then return.
+ * Call again with updated state until `done` for Vercel time limits (3+ hour files).
+ */
+export async function transcribeMainChunkBatch(
   audioPath: string,
   durationSec: number,
+  state: TranscribeMainChunkState | null,
+  options: TranscribeOptions & { maxChunksPerInvocation: number }
+): Promise<{
+  merged: TranscriptSegment[];
+  state: TranscribeMainChunkState;
+  done: boolean;
+  totalChunks: number;
+}> {
+  assertGeminiTranscriptionEnabled();
+
+  const chunkSec = config.transcribeChunkSec;
+  const overlapSec = config.transcribeChunkOverlapSec;
+  if (overlapSec >= chunkSec) {
+    throw new Error("TRANSCRIBE_CHUNK_OVERLAP_SEC must be less than TRANSCRIBE_CHUNK_SEC");
+  }
+
+  const step = chunkSec - overlapSec;
+  const overlapMs = overlapSec * 1000;
+  const onProgress = options.onProgress;
+  const maxChunks = Math.max(1, options.maxChunksPerInvocation);
+  const totalChunks = countTranscribeChunks(durationSec, chunkSec, overlapSec);
+
+  let merged = state?.merged ?? [];
+  let start = state?.nextStartSec ?? 0;
+  let chunksCompleted = state?.chunksCompleted ?? 0;
+  let globalIdx = merged.length > 0 ? merged.length : 0;
+  let processedThisInvocation = 0;
+
+  while (start < durationSec && processedThisInvocation < maxChunks) {
+    const chunkLen = Math.min(chunkSec, durationSec - start);
+    if (chunkLen < 0.5) break;
+
+    const chunkNumber = chunksCompleted + 1;
+    await onProgress?.({
+      phase: "chunk",
+      current: chunkNumber,
+      total: totalChunks,
+      message: `Transcribing chunk ${chunkNumber}/${totalChunks} (${Math.round(start)}s–${Math.round(start + chunkLen)}s)…`,
+    });
+
+    const chunkPath = await extractAudioChunk(audioPath, start, chunkLen);
+    try {
+      const part = await transcribeOnce(chunkPath);
+      const chunkStartMs = Math.round(start * 1000);
+      const offsetMs = chunkStartMs;
+      const cutMs = chunkStartMs + overlapMs;
+
+      for (const seg of part.segments) {
+        const absStart = seg.startMs + offsetMs;
+        const absEnd = seg.endMs + offsetMs;
+
+        const shifted: TranscriptSegment = {
+          ...seg,
+          id: `seg-${globalIdx}`,
+          startMs: absStart,
+          endMs: absEnd,
+          words: seg.words.map((w) => ({
+            ...w,
+            startMs: w.startMs + offsetMs,
+            endMs: w.endMs + offsetMs,
+          })),
+        };
+
+        if (chunksCompleted === 0) {
+          merged.push({ ...shifted, id: `seg-${globalIdx++}` });
+          continue;
+        }
+
+        if (absEnd <= cutMs) {
+          continue;
+        }
+
+        if (absStart >= cutMs) {
+          merged.push({ ...shifted, id: `seg-${globalIdx++}` });
+          continue;
+        }
+
+        const trimmed = trimSegmentFromCut(shifted, cutMs);
+        if (trimmed) {
+          merged.push({ ...trimmed, id: `seg-${globalIdx++}` });
+        }
+      }
+
+      console.log(
+        `[gemini] Transcribed chunk ${start.toFixed(0)}s–${(start + chunkLen).toFixed(0)}s (${merged.length} segments total)`
+      );
+      chunksCompleted++;
+      processedThisInvocation++;
+      start += step;
+    } finally {
+      await unlink(chunkPath).catch(() => {});
+    }
+  }
+
+  merged.sort((a, b) => a.startMs - b.startMs);
+  merged = merged.map((s, i) => ({ ...s, id: `seg-${i}` }));
+
+  const nextStartSec = start;
+  const restLen = Math.min(chunkSec, durationSec - nextStartSec);
+  const mainLoopDone = nextStartSec >= durationSec || restLen < 0.5;
+
+  return {
+    merged,
+    state: {
+      nextStartSec,
+      chunksCompleted,
+      merged,
+      globalIdx: merged.length,
+    },
+    done: mainLoopDone,
+    totalChunks,
+  };
+}
+
+/** Gap-fill slices + cursor for multi-invocation gap fill. */
+export type GapFillSliceCheckpoint = {
+  slices: { startMs: number; lenSec: number }[];
+  nextIndex: number;
+};
+
+function buildGapSlicesForFill(
+  durationSec: number,
   segments: TranscriptSegment[]
-): Promise<TranscriptSegment[]> {
-  if (!config.transcribeGapFillEnabled) return segments;
+): { startMs: number; lenSec: number }[] {
+  if (!config.transcribeGapFillEnabled) return [];
 
   const thresholdMs = config.transcribeGapThresholdSec * 1000;
   const maxFillSec = config.transcribeGapFillMaxSec;
@@ -274,52 +454,120 @@ async function fillTranscriptionGaps(
     gaps.push({ startMs: 0, endMs: durationMs });
   }
 
+  return collectGapFillSlices(gaps, maxFillSec);
+}
+
+/**
+ * Fill the next batch of gap slices. Pass `checkpoint: null` to compute slices from segments.
+ */
+export async function fillTranscriptionGapsBatch(
+  audioPath: string,
+  durationSec: number,
+  segments: TranscriptSegment[],
+  checkpoint: GapFillSliceCheckpoint | null,
+  options?: TranscribeOptions
+): Promise<{
+  segments: TranscriptSegment[];
+  checkpoint: GapFillSliceCheckpoint | null;
+  done: boolean;
+}> {
+  if (!config.transcribeGapFillEnabled) {
+    return { segments, checkpoint: null, done: true };
+  }
+
+  const maxPer = config.transcribeGapSlicesPerInvocation;
+  let slices = checkpoint?.slices;
+  let nextIndex = checkpoint?.nextIndex ?? 0;
+
+  if (!slices) {
+    slices = buildGapSlicesForFill(durationSec, segments);
+    nextIndex = 0;
+  }
+
+  if (slices.length === 0) {
+    return { segments, checkpoint: null, done: true };
+  }
+
   const gapSegments: TranscriptSegment[] = [];
-  let gapIdx = 0;
+  const end = Math.min(nextIndex + maxPer, slices.length);
+  const onProgress = options?.onProgress;
 
-  for (const g of gaps) {
-    let pos = g.startMs;
-    while (pos < g.endMs - 500) {
-      const remainingMs = g.endMs - pos;
-      const lenSec = Math.min(remainingMs / 1000, maxFillSec);
-      if (lenSec < 1.5) break;
+  for (let si = nextIndex; si < end; si++) {
+    const { startMs: pos, lenSec } = slices[si];
+    await onProgress?.({
+      phase: "gap_fill",
+      current: si + 1,
+      total: slices.length,
+      message: `Filling transcript gap ${si + 1}/${slices.length} (${(pos / 1000).toFixed(0)}s–${(pos / 1000 + lenSec).toFixed(0)}s)…`,
+    });
 
-      const chunkPath = await extractAudioChunk(audioPath, pos / 1000, lenSec);
-      try {
-        const part = await transcribeOnce(chunkPath);
-        const offset = pos;
-        for (const seg of part.segments) {
-          gapSegments.push({
-            ...seg,
-            id: `seg-gap-${gapIdx++}`,
-            startMs: seg.startMs + offset,
-            endMs: seg.endMs + offset,
-            words: seg.words.map((w) => ({
-              ...w,
-              startMs: w.startMs + offset,
-              endMs: w.endMs + offset,
-            })),
-          });
-        }
-        console.log(
-          `[gemini] Gap-fill ${(pos / 1000).toFixed(0)}s–${(pos / 1000 + lenSec).toFixed(0)}s (${part.segments.length} segments)`
-        );
-      } catch (e) {
-        console.warn("[gemini] Gap-fill failed:", e);
-      } finally {
-        await unlink(chunkPath).catch(() => {});
+    const chunkPath = await extractAudioChunk(audioPath, pos / 1000, lenSec);
+    try {
+      const part = await transcribeOnce(chunkPath);
+      const offset = pos;
+      let gapLocal = 0;
+      for (const seg of part.segments) {
+        gapSegments.push({
+          ...seg,
+          id: `seg-gap-${si}-${gapLocal++}`,
+          startMs: seg.startMs + offset,
+          endMs: seg.endMs + offset,
+          words: seg.words.map((w) => ({
+            ...w,
+            startMs: w.startMs + offset,
+            endMs: w.endMs + offset,
+          })),
+        });
       }
-      pos += lenSec * 1000;
+      console.log(
+        `[gemini] Gap-fill ${(pos / 1000).toFixed(0)}s–${(pos / 1000 + lenSec).toFixed(0)}s (${part.segments.length} segments)`
+      );
+    } catch (e) {
+      console.warn("[gemini] Gap-fill failed:", e);
+    } finally {
+      await unlink(chunkPath).catch(() => {});
     }
   }
 
-  if (gapSegments.length === 0) return segments;
+  nextIndex = end;
+  let combined = segments;
+  if (gapSegments.length > 0) {
+    combined = [...segments, ...gapSegments].sort((a, b) => a.startMs - b.startMs);
+    combined = combined.map((s, i) => ({ ...s, id: `seg-${i}` }));
+  }
 
-  const combined = [...segments, ...gapSegments].sort((a, b) => a.startMs - b.startMs);
-  return combined.map((s, i) => ({ ...s, id: `seg-${i}` }));
+  const gapDone = nextIndex >= slices.length;
+  return {
+    segments: combined,
+    checkpoint: gapDone ? null : { slices, nextIndex },
+    done: gapDone,
+  };
 }
 
-export async function transcribe(audioPath: string): Promise<TranscriptionResult> {
+/** Full gap-fill in one call (local scripts / short runs). Uses batched slice processing internally. */
+async function fillTranscriptionGaps(
+  audioPath: string,
+  durationSec: number,
+  segments: TranscriptSegment[],
+  options?: TranscribeOptions
+): Promise<TranscriptSegment[]> {
+  if (!config.transcribeGapFillEnabled) return segments;
+
+  let segs = segments;
+  let checkpoint: GapFillSliceCheckpoint | null = null;
+  for (;;) {
+    const r = await fillTranscriptionGapsBatch(audioPath, durationSec, segs, checkpoint, options);
+    segs = r.segments;
+    if (r.done) return segs;
+    checkpoint = r.checkpoint;
+    if (!checkpoint) return segs;
+  }
+}
+
+export async function transcribe(
+  audioPath: string,
+  options?: TranscribeOptions
+): Promise<TranscriptionResult> {
   assertGeminiTranscriptionEnabled();
 
   const durationSec = await getAudioDurationSeconds(audioPath);
@@ -332,10 +580,17 @@ export async function transcribe(audioPath: string): Promise<TranscriptionResult
 
   const step = chunkSec - overlapSec;
   const overlapMs = overlapSec * 1000;
+  const onProgress = options?.onProgress;
 
   if (durationSec <= 0 || durationSec <= chunkSec + 1) {
+    await onProgress?.({
+      phase: "chunk",
+      current: 1,
+      total: 1,
+      message: "Transcribing audio…",
+    });
     const once = await transcribeOnce(audioPath);
-    const filled = await fillTranscriptionGaps(audioPath, durationSec, once.segments);
+    const filled = await fillTranscriptionGaps(audioPath, durationSec, once.segments, options);
     return {
       segments: filled,
       info: { ...once.info, durationSeconds: durationSec },
@@ -345,10 +600,20 @@ export async function transcribe(audioPath: string): Promise<TranscriptionResult
   const merged: TranscriptSegment[] = [];
   let globalIdx = 0;
   let chunkIndex = 0;
+  const totalChunks = countTranscribeChunks(durationSec, chunkSec, overlapSec);
+  let chunkNumber = 0;
 
   for (let start = 0; start < durationSec; start += step) {
     const chunkLen = Math.min(chunkSec, durationSec - start);
     if (chunkLen < 0.5) break;
+
+    chunkNumber++;
+    await onProgress?.({
+      phase: "chunk",
+      current: chunkNumber,
+      total: totalChunks,
+      message: `Transcribing chunk ${chunkNumber}/${totalChunks} (${Math.round(start)}s–${Math.round(start + chunkLen)}s)…`,
+    });
 
     const chunkPath = await extractAudioChunk(audioPath, start, chunkLen);
     try {
@@ -404,7 +669,7 @@ export async function transcribe(audioPath: string): Promise<TranscriptionResult
 
   merged.sort((a, b) => a.startMs - b.startMs);
   const renumbered = merged.map((s, i) => ({ ...s, id: `seg-${i}` }));
-  const gapFilled = await fillTranscriptionGaps(audioPath, durationSec, renumbered);
+  const gapFilled = await fillTranscriptionGaps(audioPath, durationSec, renumbered, options);
 
   return {
     segments: gapFilled,

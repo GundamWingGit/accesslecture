@@ -27,12 +27,17 @@ export const config = {
   geminiModel: env("GEMINI_MODEL", "gemini-2.5-flash"),
 
   enableVideoOcr: envBool("ENABLE_VIDEO_OCR", true),
-  /** Beyond this duration (seconds), use sampled JPEG frames instead of sending the full video to Gemini (avoids multi-hour stalls). */
+  /**
+   * Legacy: full-file video OCR is no longer used (always sampled frames — full video stalls on Vercel).
+   * Kept for env compatibility; ignored by pipeline.
+   */
   visualFullVideoMaxSeconds: envInt("VISUAL_FULL_VIDEO_MAX_SECONDS", 600),
+  /** Max time to download lecture video from storage for OCR (ms). */
+  visualVideoDownloadTimeoutMs: envInt("VISUAL_VIDEO_DOWNLOAD_TIMEOUT_MS", 900_000),
   /** Number of evenly spaced frames for long-video slide text detection. */
   visualSampleFrameCount: envInt("VISUAL_SAMPLE_FRAME_COUNT", 18),
-  /** Max time for one visual-analysis Gemini call (ms). */
-  visualAnalysisTimeoutMs: envInt("VISUAL_ANALYSIS_TIMEOUT_MS", 240_000),
+  /** Max time for one visual-analysis Gemini call (ms). Frame batch can be slow on large slide decks. */
+  visualAnalysisTimeoutMs: envInt("VISUAL_ANALYSIS_TIMEOUT_MS", 300_000),
   complianceMode: env("COMPLIANCE_MODE", "clean"),
 
   maxCaptionLineLength: envInt("MAX_CAPTION_LINE_LENGTH", 42),
@@ -62,6 +67,15 @@ export const config = {
   transcribeGapFillEnabled: envBool("TRANSCRIBE_GAP_FILL_ENABLED", true),
   /** Max length (seconds) of a single gap-fill extract. */
   transcribeGapFillMaxSec: envInt("TRANSCRIBE_GAP_FILL_MAX_SEC", 300),
+  /**
+   * Main transcribe loop: max Gemini chunk calls per serverless invocation (Vercel ~800s each).
+   * Long lectures (3+ hours) need many invocations; 2 is a safe default.
+   */
+  transcribeChunksPerInvocation: envInt("TRANSCRIBE_CHUNKS_PER_INVOCATION", 2),
+  /**
+   * Gap-fill: max slice transcribe calls per invocation (rest continues in next invocation).
+   */
+  transcribeGapSlicesPerInvocation: envInt("TRANSCRIBE_GAP_SLICES_PER_INVOCATION", 8),
 
   /**
    * Tier B (not implemented): use Google Cloud Speech-to-Text batch as primary transcript.

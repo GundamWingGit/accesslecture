@@ -129,6 +129,11 @@
   }
 }
 
+/* Playfair Display for marketing headlines — authority + premium signal */
+.font-display {
+  font-family: var(--font-playfair), Georgia, serif;
+}
+
 /* Animated gradient background — blue & gold blobs for glassmorphism */
 body::before {
   content: "";
@@ -235,4 +240,53 @@ body::before {
 .dark .glow-ring,
 :is(.dark) .glow-ring {
   box-shadow: 0 0 0 2px oklch(0.70 0.16 240 / 20%), 0 0 20px oklch(0.70 0.16 240 / 10%);
+}
+
+/* Linear-style thin section rule — premium visual divider */
+.section-rule {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(0.45 0.16 240 / 20%) 20%,
+    oklch(0.72 0.14 85 / 15%) 50%,
+    oklch(0.45 0.16 240 / 20%) 80%,
+    transparent 100%
+  );
+  position: relative;
+}
+
+.section-rule::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.45 0.16 240 / 60%),
+    transparent
+  );
+  filter: blur(1px);
+}
+
+.dark .section-rule,
+:is(.dark) .section-rule {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(0.70 0.16 240 / 25%) 20%,
+    oklch(0.82 0.14 85 / 20%) 50%,
+    oklch(0.70 0.16 240 / 25%) 80%,
+    transparent 100%
+  );
+}
+
+/* Tabular nums for animated counters */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }

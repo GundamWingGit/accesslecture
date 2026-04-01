@@ -15,22 +15,42 @@ const rows = [
     them: "Hours to Days",
   },
   {
-    feature: "Workflow",
-    us: "AI-first automation",
-    them: "Human-heavy manual process",
+    feature: "Total Deliverables",
+    us: "10",
+    them: "1",
   },
   {
-    feature: "Output",
-    us: "Full accessible package",
-    them: "Captions only",
+    feature: "Closed Captions (SRT + VTT + PDF)",
+    us: true,
+    them: true,
   },
   {
-    feature: "Accessibility Scoring",
+    feature: "Full Timestamped Transcript",
+    us: true,
+    them: false,
+  },
+  {
+    feature: "Audio Descriptions",
+    us: true,
+    them: false,
+  },
+  {
+    feature: "Accessibility Scoring + Report",
     us: true,
     them: false,
   },
   {
     feature: "Built-in Caption Editor",
+    us: true,
+    them: false,
+  },
+  {
+    feature: "Searchable Transcript",
+    us: true,
+    them: false,
+  },
+  {
+    feature: "Compliance Certificate",
     us: true,
     them: false,
   },
@@ -63,11 +83,13 @@ export function Comparison() {
           transition={{ duration: 0.5 }}
           className="text-center max-w-2xl mx-auto mb-16"
         >
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-            Why <span className="gradient-text">AccessLecture</span>?
+          <h2 className="text-4xl sm:text-5xl font-black tracking-tight mb-4 leading-[1.05] font-display">
+            10 deliverables.{" "}
+            <span className="gradient-text">vs. 1.</span>
           </h2>
           <p className="text-muted-foreground text-lg">
-            See how AI-first accessibility compares to traditional captioning services.
+            Traditional services hand you a caption file and call it done.
+            AccessLecture delivers the complete accessible lecture package.
           </p>
         </motion.div>
 
@@ -81,13 +103,13 @@ export function Comparison() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left text-sm font-medium text-muted-foreground p-4 w-1/3">
-                  Feature
+                <th className="text-left text-sm font-medium text-muted-foreground p-4 w-[40%]">
+                  What you get
                 </th>
-                <th className="text-center text-sm font-semibold p-4 w-1/3">
+                <th className="text-center text-sm font-semibold p-4 w-[30%] bg-primary/[0.04]">
                   <span className="gradient-text">AccessLecture</span>
                 </th>
-                <th className="text-center text-sm font-medium text-muted-foreground p-4 w-1/3">
+                <th className="text-center text-sm font-medium text-muted-foreground p-4 w-[30%]">
                   Traditional Services
                 </th>
               </tr>
@@ -101,7 +123,7 @@ export function Comparison() {
                   <td className="text-sm p-4 text-muted-foreground">
                     {row.feature}
                   </td>
-                  <td className="text-sm p-4 text-center font-medium text-foreground">
+                  <td className="text-sm p-4 text-center font-medium text-foreground bg-primary/[0.03]">
                     <CellValue value={row.us} />
                   </td>
                   <td className="text-sm p-4 text-center text-muted-foreground">

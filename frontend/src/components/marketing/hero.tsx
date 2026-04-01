@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Play, Sparkles, Zap, Clock, DollarSign } from "lucide-react";
+import { Play, Sparkles, Zap, Clock, Package } from "lucide-react";
 import { motion } from "framer-motion";
 
 const stats = [
   { icon: Zap, label: "99%+ Accuracy", delay: 0.3 },
-  { icon: DollarSign, label: "10x Cheaper", delay: 0.5 },
+  { icon: Package, label: "10 Deliverables", delay: 0.5 },
   { icon: Clock, label: "Minutes, Not Days", delay: 0.7 },
 ];
 
@@ -25,7 +25,7 @@ export function Hero() {
               THE FUTURE OF ACCESSIBLE EDUCATION
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
+            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] mb-6 font-display">
               Your lectures, now{" "}
               <span className="gradient-text">universally</span>{" "}
               accessible.

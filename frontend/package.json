@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "pipeline:e2e": "tsx scripts/run-full-pipeline.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.54",
@@ -51,6 +52,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

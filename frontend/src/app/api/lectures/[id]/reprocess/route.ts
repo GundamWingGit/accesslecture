@@ -3,8 +3,10 @@ import { after } from "next/server";
 import { getSupabase } from "@/lib/server/supabase";
 import { json, error, withAuth } from "@/lib/server/api-helpers";
 import { processLecturePipeline } from "@/lib/server/pipeline";
+import { deleteTranscriptionWorkAudio } from "@/lib/server/pipeline-phase1";
 
-export const maxDuration = 300;
+/** Same as POST /api/lectures — full pipeline in `after()`. */
+export const maxDuration = 800;
 
 export async function POST(
   request: NextRequest,
@@ -25,9 +27,16 @@ export async function POST(
     await sb.from("accessibility_scores").delete().eq("lecture_id", id);
     await sb.from("transcripts").delete().eq("lecture_id", id);
 
+    await deleteTranscriptionWorkAudio(id).catch(() => {});
+
     await sb
       .from("lectures")
-      .update({ status: "uploaded", progress_pct: 0, progress_message: "" })
+      .update({
+        status: "uploaded",
+        progress_pct: 0,
+        progress_message: "",
+        pipeline_checkpoint: null,
+      })
       .eq("id", id);
 
     after(async () => {
