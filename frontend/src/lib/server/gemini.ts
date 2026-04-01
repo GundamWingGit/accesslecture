@@ -96,17 +96,21 @@ export interface SlideDetection {
 // MIME helpers
 // ---------------------------------------------------------------------------
 
-function audioMime(path: string): string {
+function mediaMime(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return (
-    ({
-      mp3: "audio/mpeg",
-      m4a: "audio/mp4",
-      webm: "audio/webm",
-      ogg: "audio/ogg",
-      flac: "audio/flac",
-    } as Record<string, string>)[ext] ?? "audio/wav"
-  );
+  const mimeMap: Record<string, string> = {
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    webm: "audio/webm",
+    ogg: "audio/ogg",
+    flac: "audio/flac",
+    wav: "audio/wav",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+    avi: "video/x-msvideo",
+    mkv: "video/x-matroska",
+  };
+  return mimeMap[ext] ?? "audio/wav";
 }
 
 function videoMime(path: string): string {
@@ -159,7 +163,7 @@ export async function transcribe(
 ): Promise<TranscriptionResult> {
   const client = getClient();
   const audioBytes = await readFile(audioPath);
-  const mime = audioMime(audioPath);
+  const mime = mediaMime(audioPath);
 
   const response = await client.models.generateContent({
     model: config.geminiModel,

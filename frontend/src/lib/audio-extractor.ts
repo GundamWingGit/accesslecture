@@ -1,144 +1,127 @@
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
-
-let ffmpeg: FFmpeg | null = null;
-
-async function getFFmpeg(): Promise<FFmpeg> {
-  if (ffmpeg && ffmpeg.loaded) return ffmpeg;
-
-  ffmpeg = new FFmpeg();
-
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-  });
-
-  return ffmpeg;
-}
+import * as tus from "tus-js-client";
 
 export interface ExtractionProgress {
   stage: "loading" | "extracting" | "done";
   progress: number;
 }
 
+const SMALL_FILE_THRESHOLD = 40 * 1024 * 1024; // 40MB — use simple upload below this
+
 /**
- * Extract audio from a video file client-side using ffmpeg.wasm.
- * Converts any video/audio input to MP3 format, reducing file size by ~90%.
+ * For video files, we skip client-side ffmpeg extraction entirely.
+ * Gemini can transcribe video directly, so we just upload the original.
+ * For audio files, pass through as-is.
  */
 export async function extractAudio(
   file: File,
   onProgress?: (p: ExtractionProgress) => void
 ): Promise<File> {
-  if (file.type.startsWith("audio/")) {
-    return file;
-  }
-
-  onProgress?.({ stage: "loading", progress: 0 });
-
-  const ff = await getFFmpeg();
-
-  ff.on("progress", ({ progress }) => {
-    onProgress?.({
-      stage: "extracting",
-      progress: Math.min(Math.round(progress * 100), 99),
-    });
-  });
-
-  const inputName = "input" + getExtension(file.name);
-  const outputName = "output.mp3";
-
-  await ff.writeFile(inputName, await fetchFile(file));
-
-  await ff.exec([
-    "-i", inputName,
-    "-vn",              // no video
-    "-acodec", "libmp3lame",
-    "-ab", "128k",      // 128kbps
-    "-ar", "16000",     // 16kHz (optimal for Whisper)
-    "-ac", "1",         // mono
-    outputName,
-  ]);
-
-  const data = await ff.readFile(outputName);
-  const blob = new Blob([new Uint8Array(data as Uint8Array)], { type: "audio/mpeg" });
-  const audioFile = new File(
-    [blob],
-    file.name.replace(/\.[^/.]+$/, ".mp3"),
-    { type: "audio/mpeg" }
-  );
-
-  await ff.deleteFile(inputName);
-  await ff.deleteFile(outputName);
-
   onProgress?.({ stage: "done", progress: 100 });
-
-  return audioFile;
+  return file;
 }
 
-function getExtension(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  if (ext) return `.${ext}`;
-  return ".mp4";
+async function getSupabaseSession() {
+  const { getSupabaseBrowser } = await import("@/lib/supabase");
+  const supabase = getSupabaseBrowser();
+  const { data } = await supabase.auth.getSession();
+  return { supabase, session: data.session };
+}
+
+function getProjectId(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const match = url.match(/https?:\/\/([^.]+)/);
+  return match?.[1] ?? "";
 }
 
 /**
- * Upload audio file to Supabase Storage.
- * Returns the public URL of the uploaded file.
+ * Upload a file to Supabase Storage using TUS resumable upload for large files,
+ * or simple upload for small files.
+ */
+async function uploadWithResumable(
+  bucket: string,
+  filePath: string,
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<string> {
+  const { supabase, session } = await getSupabaseSession();
+
+  if (!session?.access_token) {
+    throw new Error("Not authenticated — please sign in first");
+  }
+
+  if (file.size < SMALL_FILE_THRESHOLD) {
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(filePath, file, { cacheControl: "3600", upsert: true });
+
+    if (error) throw new Error(`Upload failed: ${error.message}`);
+    onProgress?.(100);
+  } else {
+    const projectId = getProjectId();
+    const endpoint = `https://${projectId}.supabase.co/storage/v1/upload/resumable`;
+
+    await new Promise<void>((resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          "x-upsert": "true",
+        },
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        chunkSize: 6 * 1024 * 1024,
+        metadata: {
+          bucketName: bucket,
+          objectName: filePath,
+          contentType: file.type || "application/octet-stream",
+        },
+        onProgress: (bytesUploaded, bytesTotal) => {
+          const pct = Math.round((bytesUploaded / bytesTotal) * 100);
+          onProgress?.(pct);
+        },
+        onSuccess: () => resolve(),
+        onError: (err) => reject(new Error(`Resumable upload failed: ${err.message}`)),
+      });
+
+      upload.findPreviousUploads().then((prev) => {
+        if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
+        upload.start();
+      });
+    });
+  }
+
+  const { data: urlData } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(filePath);
+
+  return urlData.publicUrl;
+}
+
+/**
+ * Upload audio/video file to Supabase Storage "audio" bucket.
+ * Uses resumable upload for large files.
  */
 export async function uploadToStorage(
   file: File,
   lectureId: string,
   onProgress?: (pct: number) => void
 ): Promise<string> {
-  const { getSupabaseBrowser } = await import("@/lib/supabase");
-  const supabase = getSupabaseBrowser();
-
-  const filePath = `lectures/${lectureId}/${file.name}`;
-
-  const { error } = await supabase.storage
-    .from("audio")
-    .upload(filePath, file, {
-      cacheControl: "3600",
-      upsert: true,
-    });
-
-  if (error) throw new Error(`Upload failed: ${error.message}`);
-
-  onProgress?.(100);
-
-  const { data: urlData } = supabase.storage
-    .from("audio")
-    .getPublicUrl(filePath);
-
-  return urlData.publicUrl;
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = `lectures/${lectureId}/${safeName}`;
+  return uploadWithResumable("audio", filePath, file, onProgress);
 }
 
 /**
- * Upload original video file to Supabase Storage for slide OCR.
- * Returns the public URL. Stored in a separate "videos" bucket.
+ * Upload original video file to Supabase Storage "videos" bucket.
+ * Uses resumable upload for large files.
  */
 export async function uploadVideoToStorage(
   file: File,
   lectureId: string,
+  onProgress?: (pct: number) => void
 ): Promise<string> {
-  const { getSupabaseBrowser } = await import("@/lib/supabase");
-  const supabase = getSupabaseBrowser();
-
-  const filePath = `lectures/${lectureId}/${file.name}`;
-
-  const { error } = await supabase.storage
-    .from("videos")
-    .upload(filePath, file, {
-      cacheControl: "3600",
-      upsert: true,
-    });
-
-  if (error) throw new Error(`Video upload failed: ${error.message}`);
-
-  const { data: urlData } = supabase.storage
-    .from("videos")
-    .getPublicUrl(filePath);
-
-  return urlData.publicUrl;
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = `lectures/${lectureId}/${safeName}`;
+  return uploadWithResumable("videos", filePath, file, onProgress);
 }

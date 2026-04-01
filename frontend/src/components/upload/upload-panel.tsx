@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { extractAudio, uploadToStorage, uploadVideoToStorage } from "@/lib/audio-extractor";
+import { uploadToStorage, uploadVideoToStorage } from "@/lib/audio-extractor";
 
 interface UploadPanelProps {
   onComplete: (lectureId: string) => void;
@@ -54,61 +54,28 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
 
     setUploading(true);
     try {
-      let audioFile: File;
-
-      if (file.type.startsWith("audio/")) {
-        audioFile = file;
-        setStage("Audio file ready");
-        setProgress(40);
-      } else {
-        setStage("Loading audio processor...");
-        setProgress(5);
-        try {
-          audioFile = await extractAudio(file, (p) => {
-            if (p.stage === "loading") {
-              setStage("Loading audio processor...");
-              setProgress(5);
-            } else if (p.stage === "extracting") {
-              setStage("Extracting audio from video...");
-              setProgress(5 + Math.round(p.progress * 0.35));
-            }
-          });
-        } catch (extractErr) {
-          console.error("Audio extraction failed:", extractErr);
-          toast.error("Audio extraction failed. Uploading video directly for server-side processing...");
-          audioFile = file;
-        }
-      }
-
-      setStage("Uploading audio...");
-      setProgress(45);
-
+      const isVideo = file.type.startsWith("video/");
       const tempId = crypto.randomUUID();
-      let audioUrl: string;
-      try {
-        audioUrl = await uploadToStorage(audioFile, tempId, (pct) => {
-          setProgress(45 + Math.round(pct * 0.15));
-        });
-      } catch (uploadErr) {
-        console.error("Audio upload failed:", uploadErr);
-        throw new Error(`Audio upload failed: ${uploadErr instanceof Error ? uploadErr.message : "Unknown error"}`);
-      }
+
+      setStage(isVideo ? "Uploading video..." : "Uploading audio...");
+      setProgress(5);
+
+      const audioUrl = await uploadToStorage(file, tempId, (pct) => {
+        const scaled = isVideo ? Math.round(pct * 0.45) : Math.round(pct * 0.85);
+        setProgress(5 + scaled);
+      });
 
       let videoUrl: string | undefined;
-      if (file.type.startsWith("video/")) {
-        setStage("Uploading video...");
-        setProgress(65);
-        try {
-          videoUrl = await uploadVideoToStorage(file, tempId);
-          setProgress(80);
-        } catch (videoErr) {
-          console.error("Video upload failed:", videoErr);
-          toast.error("Video upload failed — processing will continue with audio only");
-        }
+      if (isVideo) {
+        setStage("Uploading video for playback & slide detection...");
+        setProgress(55);
+        videoUrl = await uploadVideoToStorage(file, tempId, (pct) => {
+          setProgress(55 + Math.round(pct * 0.30));
+        });
       }
 
       setStage("Creating lecture...");
-      setProgress(85);
+      setProgress(90);
 
       const lecture = await api.lectures.create({
         title: title.trim(),
