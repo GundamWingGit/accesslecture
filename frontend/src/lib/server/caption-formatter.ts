@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { config } from "./config";
 import type { TranscriptSegment } from "./gemini";
 
@@ -41,7 +42,7 @@ export function segmentsToCaptions(
       sequence++;
       const prefix = speakerLabel ? `>> ${speakerLabel}: ` : "";
       captions.push({
-        id: `cap-${sequence}`,
+        id: randomUUID(),
         sequence,
         startMs: seg.startMs,
         endMs: seg.endMs,
@@ -67,7 +68,7 @@ export function segmentsToCaptions(
         sequence++;
         const prefix = i === 0 && speakerLabel ? `>> ${speakerLabel}: ` : "";
         captions.push({
-          id: `cap-${sequence}`,
+          id: randomUUID(),
           sequence,
           startMs: currentStart,
           endMs: chunkEnd,

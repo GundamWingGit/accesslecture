@@ -160,7 +160,11 @@ export async function processLecturePipeline(lectureId: string) {
 
     const BATCH = 50;
     for (let i = 0; i < captionRows.length; i += BATCH) {
-      await sb.from("captions").insert(captionRows.slice(i, i + BATCH));
+      const { error: insertErr } = await sb.from("captions").insert(captionRows.slice(i, i + BATCH));
+      if (insertErr) {
+        console.error(`Caption batch insert error (batch ${i / BATCH}):`, insertErr.message);
+        throw new Error(`Failed to insert captions: ${insertErr.message}`);
+      }
     }
 
     // 5. Set cleaned_text = original_text (AI cleanup deferred to user request)

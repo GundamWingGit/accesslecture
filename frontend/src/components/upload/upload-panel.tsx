@@ -54,32 +54,57 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
 
     setUploading(true);
     try {
-      setStage("Extracting audio...");
-      setProgress(5);
+      let audioFile: File;
 
-      const audioFile = await extractAudio(file, (p) => {
-        if (p.stage === "loading") {
-          setStage("Loading audio processor...");
-          setProgress(5);
-        } else if (p.stage === "extracting") {
-          setStage("Extracting audio...");
-          setProgress(5 + Math.round(p.progress * 0.4));
+      if (file.type.startsWith("audio/")) {
+        audioFile = file;
+        setStage("Audio file ready");
+        setProgress(40);
+      } else {
+        setStage("Loading audio processor...");
+        setProgress(5);
+        try {
+          audioFile = await extractAudio(file, (p) => {
+            if (p.stage === "loading") {
+              setStage("Loading audio processor...");
+              setProgress(5);
+            } else if (p.stage === "extracting") {
+              setStage("Extracting audio from video...");
+              setProgress(5 + Math.round(p.progress * 0.35));
+            }
+          });
+        } catch (extractErr) {
+          console.error("Audio extraction failed:", extractErr);
+          toast.error("Audio extraction failed. Uploading video directly for server-side processing...");
+          audioFile = file;
         }
-      });
+      }
 
       setStage("Uploading audio...");
-      setProgress(50);
+      setProgress(45);
 
       const tempId = crypto.randomUUID();
-      const audioUrl = await uploadToStorage(audioFile, tempId, (pct) => {
-        setProgress(50 + Math.round(pct * 0.2));
-      });
+      let audioUrl: string;
+      try {
+        audioUrl = await uploadToStorage(audioFile, tempId, (pct) => {
+          setProgress(45 + Math.round(pct * 0.15));
+        });
+      } catch (uploadErr) {
+        console.error("Audio upload failed:", uploadErr);
+        throw new Error(`Audio upload failed: ${uploadErr instanceof Error ? uploadErr.message : "Unknown error"}`);
+      }
 
       let videoUrl: string | undefined;
       if (file.type.startsWith("video/")) {
-        setStage("Uploading video for slide detection...");
-        setProgress(72);
-        videoUrl = await uploadVideoToStorage(file, tempId);
+        setStage("Uploading video...");
+        setProgress(65);
+        try {
+          videoUrl = await uploadVideoToStorage(file, tempId);
+          setProgress(80);
+        } catch (videoErr) {
+          console.error("Video upload failed:", videoErr);
+          toast.error("Video upload failed — processing will continue with audio only");
+        }
       }
 
       setStage("Creating lecture...");
@@ -97,6 +122,7 @@ export function UploadPanel({ onComplete }: UploadPanelProps) {
       toast.success("Lecture uploaded! Processing will begin automatically.");
       onComplete(lecture.id);
     } catch (err) {
+      console.error("Upload error:", err);
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);

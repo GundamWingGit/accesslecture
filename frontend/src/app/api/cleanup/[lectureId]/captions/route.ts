@@ -17,7 +17,6 @@ export async function GET(
       .select("*")
       .eq("lecture_id", lectureId)
       .order("sequence");
-    if (!data?.length) return error("Captions not found", 404);
 
     const { data: lecture } = await sb
       .from("lectures")
@@ -25,6 +24,6 @@ export async function GET(
       .eq("id", lectureId);
     const mode = lecture?.[0]?.compliance_mode ?? "clean";
 
-    return json({ lecture_id: lectureId, captions: data, compliance_mode: mode });
+    return json({ lecture_id: lectureId, captions: data ?? [], compliance_mode: mode });
   });
 }
