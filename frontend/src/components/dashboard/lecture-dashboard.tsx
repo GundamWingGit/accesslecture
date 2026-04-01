@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type Lecture } from "@/lib/api";
+import { DeleteLectureButton } from "@/components/lecture/delete-lecture-button";
 
 interface LectureDashboardProps {
   onSelect: (id: string) => void;
@@ -66,7 +67,7 @@ function LectureCard({
       onClick={onClick}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
             <FileAudio className="w-5 h-5 text-primary" />
           </div>
@@ -84,10 +85,18 @@ function LectureCard({
             </div>
           </div>
         </div>
-        <Badge variant={config.variant} className="flex-shrink-0 rounded-lg">
-          <Icon className={`w-3 h-3 mr-1 ${isProcessing ? "animate-spin" : ""}`} />
-          {config.label}
-        </Badge>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <DeleteLectureButton
+            lectureId={lecture.id}
+            lectureTitle={lecture.title}
+            stopPropagation
+            variant="icon"
+          />
+          <Badge variant={config.variant} className="rounded-lg">
+            <Icon className={`w-3 h-3 mr-1 ${isProcessing ? "animate-spin" : ""}`} />
+            {config.label}
+          </Badge>
+        </div>
       </div>
     </div>
   );

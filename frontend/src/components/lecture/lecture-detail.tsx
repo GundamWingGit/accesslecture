@@ -18,6 +18,7 @@ import { IssuesPanel } from "./issues-panel";
 import { ExportPanel } from "./export-panel";
 import { AIGuidancePanel } from "./ai-guidance-panel";
 import { ChatPanel } from "./chat-panel";
+import { DeleteLectureButton } from "./delete-lecture-button";
 
 interface LectureDetailProps {
   lectureId: string;
@@ -64,7 +65,7 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
         <Button
           variant="ghost"
           size="sm"
@@ -74,7 +75,7 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-2xl font-bold gradient-text">{lecture.title}</h2>
           <p className="text-sm text-muted-foreground">
             {lecture.compliance_mode === "verbatim" ? "Verbatim" : "Clean"} mode
@@ -83,12 +84,18 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
               : ""}
           </p>
         </div>
+        <DeleteLectureButton
+          lectureId={lectureId}
+          lectureTitle={lecture.title}
+          variant="inline"
+          onDeleted={() => setCurrentLecture(null)}
+        />
       </div>
 
       {isProcessing ? (
         <ProcessingView lectureId={lectureId} />
       ) : lecture.status === "failed" ? (
-        <FailedView lectureId={lectureId} />
+        <FailedView lectureId={lectureId} lectureTitle={lecture.title} />
       ) : (
         <>
           {lecture.video_url && (
@@ -137,7 +144,14 @@ export function LectureDetail({ lectureId }: LectureDetailProps) {
   );
 }
 
-function FailedView({ lectureId }: { lectureId: string }) {
+function FailedView({
+  lectureId,
+  lectureTitle,
+}: {
+  lectureId: string;
+  lectureTitle: string;
+}) {
+  const setCurrentLecture = useAppStore((s) => s.setCurrentLecture);
   const [reprocessing, setReprocessing] = useState(false);
   const queryClient = useQueryClient();
 
@@ -160,13 +174,21 @@ function FailedView({ lectureId }: { lectureId: string }) {
       <p className="text-sm text-muted-foreground">
         Something went wrong during processing. You can try again.
       </p>
-      <Button onClick={handleReprocess} disabled={reprocessing} className="btn-gradient">
-        {reprocessing ? (
-          <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Reprocessing...</>
-        ) : (
-          <><RefreshCw className="w-4 h-4 mr-2" />Reprocess Lecture</>
-        )}
-      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button onClick={handleReprocess} disabled={reprocessing} className="btn-gradient">
+          {reprocessing ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Reprocessing...</>
+          ) : (
+            <><RefreshCw className="w-4 h-4 mr-2" />Reprocess Lecture</>
+          )}
+        </Button>
+        <DeleteLectureButton
+          lectureId={lectureId}
+          lectureTitle={lectureTitle}
+          variant="inline"
+          onDeleted={() => setCurrentLecture(null)}
+        />
+      </div>
     </div>
   );
 }

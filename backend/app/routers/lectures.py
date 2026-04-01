@@ -12,6 +12,7 @@ from app.models.schemas import (
 )
 from app.services.supabase_client import get_supabase
 from app.services.pipeline import process_lecture_pipeline
+from app.services.lecture_storage import remove_lecture_storage_objects
 
 router = APIRouter()
 
@@ -147,13 +148,31 @@ async def confirm_review(lecture_id: str, user_id: str = Depends(get_current_use
 @router.delete("/{lecture_id}")
 async def delete_lecture(lecture_id: str, user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
-    # Verify ownership first
-    check = sb.table("lectures").select("id").eq("id", lecture_id).eq("user_id", user_id).execute()
-    if not check.data:
+    row = (
+        sb.table("lectures")
+        .select("id, audio_url, video_url")
+        .eq("id", lecture_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not row.data:
         raise HTTPException(status_code=404, detail="Lecture not found")
+
+    r = row.data[0]
+    remove_lecture_storage_objects(sb, r.get("audio_url"), r.get("video_url"))
 
     sb.table("captions").delete().eq("lecture_id", lecture_id).execute()
     sb.table("transcripts").delete().eq("lecture_id", lecture_id).execute()
     sb.table("accessibility_scores").delete().eq("lecture_id", lecture_id).execute()
     sb.table("lectures").delete().eq("id", lecture_id).execute()
+
+    prof = sb.table("user_profiles").select("plan, lectures_this_month").eq("id", user_id).execute()
+    if prof.data:
+        p = prof.data[0]
+        plan = p.get("plan") or "free"
+        if plan not in ("pro", "institution") and (p.get("lectures_this_month") or 0) > 0:
+            sb.table("user_profiles").update(
+                {"lectures_this_month": max(0, (p.get("lectures_this_month") or 0) - 1)}
+            ).eq("id", user_id).execute()
+
     return {"deleted": True}
