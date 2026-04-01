@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 import type { Lecture, CaptionBlock } from "@/lib/api";
 import { WaveformCaptionOverlay } from "./waveform-caption-overlay";
+import {
+  getWaveformFromCache,
+  saveWaveformToCache,
+  waveformCacheKey,
+} from "@/lib/waveform-cache";
 
 function formatTimecode(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -62,6 +67,12 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
       const RegionsPlugin = (await import("wavesurfer.js/dist/plugins/regions.esm.js")).default;
       if (destroyed) return;
 
+      const cacheKey = waveformCacheKey(lecture.id, mediaUrl);
+      const cached = await getWaveformFromCache(cacheKey);
+      if (destroyed) return;
+
+      const usedCache = !!cached?.peaks?.length && cached.duration > 0;
+
       const ws = WaveSurfer.create({
         container: waveformRef.current!,
         waveColor: "hsl(var(--muted-foreground) / 0.3)",
@@ -73,7 +84,14 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
         barRadius: 2,
         height: 80,
         normalize: true,
+        sampleRate: 8000,
         url: mediaUrl,
+        ...(usedCache
+          ? {
+              peaks: cached!.peaks,
+              duration: cached!.duration,
+            }
+          : {}),
       });
 
       const regions = ws.registerPlugin(RegionsPlugin.create());
@@ -90,6 +108,14 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
         ws.setPlaybackRate(useAppStore.getState().playbackRate);
         if (lecture.video_url) {
           ws.setVolume(0);
+        }
+
+        if (!usedCache) {
+          const dur = ws.getDuration();
+          if (dur > 0) {
+            const peaks = ws.exportPeaks({ maxLength: 8000, precision: 4 });
+            void saveWaveformToCache(cacheKey, peaks, dur);
+          }
         }
 
         const caps = captionsRef.current;
@@ -130,6 +156,7 @@ export function MediaPlayer({ lecture, captions, hideTransport }: MediaPlayerPro
     };
   }, [
     mediaUrl,
+    lecture.id,
     lecture.video_url,
     setCurrentTimeMs,
     setIsPlaying,

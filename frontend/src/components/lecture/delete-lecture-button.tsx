@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
+import { deleteWaveformCacheForLecture } from "@/lib/waveform-cache";
 
 type DeleteLectureButtonProps = {
   lectureId: string;
@@ -40,6 +41,7 @@ export function DeleteLectureButton({
     setPending(true);
     try {
       await api.lectures.delete(lectureId);
+      await deleteWaveformCacheForLecture(lectureId);
       await queryClient.invalidateQueries({ queryKey: ["lectures"] });
       await queryClient.invalidateQueries({ queryKey: ["lecture", lectureId] });
       toast.success("Lecture deleted");
