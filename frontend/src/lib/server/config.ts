@@ -68,4 +68,10 @@ export const config = {
    * When true, transcribe() throws until STT is wired; keep false.
    */
   speechToTextPrimary: envBool("SPEECH_TO_TEXT_PRIMARY", false),
+
+  /**
+   * Shared secret for POST /api/internal/pipeline-continue (phase 2 after transcription).
+   * Required on Vercel so captions+scoring run in a second serverless invocation (extra 800s budget).
+   */
+  pipelineInternalSecret: env("PIPELINE_INTERNAL_SECRET"),
 } as const;

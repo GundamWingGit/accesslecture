@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Mic, Sparkles, BarChart3, Clock, RotateCcw } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 
 const STAGE_ICONS: Record<string, typeof Mic> = {
@@ -26,6 +27,7 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
   const queryClient = useQueryClient();
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const lastPctRef = useRef<number | null>(null);
   const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -47,13 +49,19 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
       setShowReset(false);
       if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
       const slowVisual = (message || "").toLowerCase().includes("on-screen");
-      const stallMs = slowVisual ? 240_000 : 90_000;
+      const transcribing = status === "transcribing";
+      // Transcription can run many minutes (chunked Gemini); avoid false "stuck" at 90s. OCR can be slow too.
+      const stallMs = transcribing
+        ? 900_000
+        : slowVisual
+          ? 240_000
+          : 90_000;
       stallTimerRef.current = setTimeout(() => setShowReset(true), stallMs);
     }
     return () => {
       if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
     };
-  }, [pct, message]);
+  }, [pct, message, status]);
 
   async function handleReset() {
     setResetting(true);
@@ -65,6 +73,20 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
       console.error("Reset failed:", e);
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function handleResumeCaptions() {
+    setResuming(true);
+    try {
+      await api.lectures.resumeProcessing(lectureId);
+      toast.success("Caption step started");
+      queryClient.invalidateQueries({ queryKey: ["progress", lectureId] });
+      queryClient.invalidateQueries({ queryKey: ["lecture", lectureId] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not resume");
+    } finally {
+      setResuming(false);
     }
   }
 
@@ -112,14 +134,28 @@ export function ProcessingView({ lectureId }: { lectureId: string }) {
           </div>
 
           {showReset && (
-            <button
-              onClick={handleReset}
-              disabled={resetting}
-              className="glass px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
-            >
-              <RotateCcw className={`w-4 h-4 ${resetting ? "animate-spin" : ""}`} />
-              {resetting ? "Resetting…" : "Processing seems stuck — skip to results"}
-            </button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleResumeCaptions}
+                disabled={resuming || resetting}
+                className="glass px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
+              >
+                {resuming ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                {resuming ? "Starting caption step…" : "Resume caption step (if transcript is done)"}
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={resetting}
+                className="glass px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
+              >
+                <RotateCcw className={`w-4 h-4 ${resetting ? "animate-spin" : ""}`} />
+                {resetting ? "Resetting…" : "Processing seems stuck — skip to results"}
+              </button>
+            </div>
           )}
         </div>
       </div>

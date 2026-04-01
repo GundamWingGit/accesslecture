@@ -47,6 +47,9 @@ export const api = {
       request<{ status: string }>(`/lectures/${id}/reset`, { method: "POST" }),
     reprocess: (id: string) =>
       request<{ status: string }>(`/lectures/${id}/reprocess`, { method: "POST" }),
+    /** If transcript exists but captions never built (phase 2 failed), run caption+score only. */
+    resumeProcessing: (id: string) =>
+      request<{ status: string }>(`/lectures/${id}/resume-processing`, { method: "POST" }),
   },
 
   transcript: {

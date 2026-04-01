@@ -3,7 +3,8 @@ import { json, error, withAuth, verifyLectureOwnership } from "@/lib/server/api-
 import { runAiCleanup } from "@/lib/server/pipeline";
 import { rateLimitByIp } from "@/lib/server/rate-limit";
 
-export const maxDuration = 300;
+/** Long lectures: many caption cleanup calls; align with other heavy routes. */
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   const rl = rateLimitByIp(request, "cleanup:run", 20);

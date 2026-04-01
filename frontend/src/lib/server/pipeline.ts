@@ -4,6 +4,7 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { getSupabase } from "./supabase";
 import { config } from "./config";
+import type { TranscriptSegment } from "./gemini";
 import {
   transcribe,
   detectVisualText,
@@ -72,8 +73,176 @@ async function safeUnlink(...paths: (string | null | undefined)[]) {
   }
 }
 
+/** Rebuild typed segments from transcripts.segments JSON (Supabase snake_case). */
+export function transcriptSegmentsFromDb(segments: unknown): TranscriptSegment[] {
+  if (!Array.isArray(segments)) return [];
+  return segments.map((s: Record<string, unknown>) => ({
+    id: String(s.id ?? ""),
+    startMs: Number(s.start_ms ?? 0),
+    endMs: Number(s.end_ms ?? 0),
+    text: String(s.text ?? ""),
+    speaker: (s.speaker as string | null) ?? null,
+    words: Array.isArray(s.words)
+      ? s.words.map((w: Record<string, unknown>) => ({
+          word: String(w.word ?? ""),
+          startMs: Number(w.start_ms ?? 0),
+          endMs: Number(w.end_ms ?? 0),
+          speaker: (w.speaker as string | null) ?? null,
+          confidence: Number(w.confidence ?? 0.92),
+        }))
+      : [],
+  }));
+}
+
+/**
+ * Phase 2: captions + scoring + completed. Runs in a second Vercel invocation (fresh maxDuration).
+ * Safe to call from resume if transcript exists and captions are missing.
+ */
+export async function processLecturePipelineAfterTranscript(lectureId: string) {
+  try {
+    const sb = getSupabase();
+    const { data: lectureRows } = await sb
+      .from("lectures")
+      .select("*")
+      .eq("id", lectureId);
+
+    if (!lectureRows?.length) {
+      console.error(`Lecture ${lectureId} not found (phase 2)`);
+      return;
+    }
+
+    const lecture = lectureRows[0];
+    const durationSeconds = lecture.duration_seconds ?? null;
+
+    const { data: tr } = await sb
+      .from("transcripts")
+      .select("segments")
+      .eq("lecture_id", lectureId)
+      .maybeSingle();
+
+    if (!tr?.segments) {
+      await updateLectureStatus(
+        lectureId,
+        LectureStatus.FAILED,
+        0,
+        "No transcript found — cannot build captions."
+      );
+      return;
+    }
+
+    const segments = transcriptSegmentsFromDb(tr.segments);
+    if (segments.length === 0) {
+      await updateLectureStatus(
+        lectureId,
+        LectureStatus.FAILED,
+        0,
+        "Transcript is empty — cannot build captions."
+      );
+      return;
+    }
+
+    await sb.from("captions").delete().eq("lecture_id", lectureId);
+    await sb.from("accessibility_scores").delete().eq("lecture_id", lectureId);
+
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 60, "Generating captions…");
+    const captions = segmentsToCaptions(segments);
+
+    const captionRows = captions.map((cap) => ({
+      id: cap.id,
+      lecture_id: lectureId,
+      sequence: cap.sequence,
+      start_ms: cap.startMs,
+      end_ms: cap.endMs,
+      original_text: cap.originalText,
+      speaker: cap.speaker,
+      min_confidence: cap.minConfidence,
+    }));
+
+    const BATCH = 50;
+    for (let i = 0; i < captionRows.length; i += BATCH) {
+      const { error: insertErr } = await sb.from("captions").insert(captionRows.slice(i, i + BATCH));
+      if (insertErr) {
+        console.error(`Caption batch insert error (batch ${i / BATCH}):`, insertErr.message);
+        throw new Error(`Failed to insert captions: ${insertErr.message}`);
+      }
+    }
+
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 75, "Formatting captions…");
+    for (let i = 0; i < captionRows.length; i += BATCH) {
+      const batch = captionRows.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map((cap) =>
+          sb.from("captions").update({ cleaned_text: cap.original_text }).eq("id", cap.id)
+        )
+      );
+    }
+    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 85, "Captions ready");
+
+    await updateLectureStatus(lectureId, LectureStatus.SCORING, 90, "Scoring accessibility…");
+    await runScoring(lectureId, durationSeconds);
+
+    await updateLectureStatus(lectureId, LectureStatus.COMPLETED, 100, "Processing complete!");
+  } catch (e) {
+    console.error(`Pipeline phase 2 failed for lecture ${lectureId}:`, e);
+    await updateLectureStatus(
+      lectureId,
+      LectureStatus.FAILED,
+      0,
+      String(e instanceof Error ? e.message : e).slice(0, 500)
+    );
+  }
+}
+
+/**
+ * On Vercel, schedule phase 2 so it runs in a new serverless invocation (new 800s budget).
+ * Locally, runs phase 2 in-process.
+ */
+async function schedulePipelineContinuation(lectureId: string) {
+  if (process.env.VERCEL !== "1") {
+    await processLecturePipelineAfterTranscript(lectureId);
+    return;
+  }
+
+  const base =
+    process.env.VERCEL_URL != null
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+
+  const secret = config.pipelineInternalSecret;
+  if (!base || !secret) {
+    console.error("[pipeline] Vercel: set VERCEL_URL (auto), NEXT_PUBLIC_APP_URL, and PIPELINE_INTERNAL_SECRET");
+    await updateLectureStatus(
+      lectureId,
+      LectureStatus.FAILED,
+      0,
+      "Server configuration: set PIPELINE_INTERNAL_SECRET and NEXT_PUBLIC_APP_URL in Vercel (Project → Settings → Environment Variables)."
+    );
+    return;
+  }
+
+  const res = await fetch(`${base}/api/internal/pipeline-continue`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({ lectureId }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("[pipeline] pipeline-continue:", res.status, text);
+    await updateLectureStatus(
+      lectureId,
+      LectureStatus.FAILED,
+      0,
+      `Could not start caption step (${res.status}). Check logs or use Reprocess.`
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Main pipeline
+// Main pipeline (phase 1: transcribe + optional OCR + store transcript; then phase 2)
 // ---------------------------------------------------------------------------
 
 export async function processLecturePipeline(lectureId: string) {
@@ -110,9 +279,22 @@ export async function processLecturePipeline(lectureId: string) {
       transcriptionPath = extractedAudioPath;
     }
 
-    // 3. Transcribe
+    // 3. Transcribe (per-chunk progress keeps DB fresh for UI + resets stall timer on Vercel)
     await updateLectureStatus(lectureId, LectureStatus.TRANSCRIBING, 10, "Transcribing audio…");
-    const { segments, info } = await transcribe(transcriptionPath);
+    const { segments, info } = await transcribe(transcriptionPath, {
+      onProgress: async (p) => {
+        const pct =
+          p.phase === "chunk"
+            ? 10 + Math.round((34 * p.current) / Math.max(1, p.total))
+            : 44 + Math.min(1, Math.round(p.current / Math.max(1, p.total)));
+        await updateLectureStatus(
+          lectureId,
+          LectureStatus.TRANSCRIBING,
+          Math.min(45, pct),
+          p.message
+        );
+      },
+    });
 
     if (extractedAudioPath) await safeUnlink(extractedAudioPath);
 
@@ -183,47 +365,14 @@ export async function processLecturePipeline(lectureId: string) {
       { onConflict: "lecture_id" }
     );
 
-    // 4. Generate captions (batch insert for speed)
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 60, "Generating captions…");
-    const captions = segmentsToCaptions(segments);
+    await updateLectureStatus(
+      lectureId,
+      LectureStatus.TRANSCRIBING,
+      48,
+      "Saving transcript… starting caption step…"
+    );
 
-    const captionRows = captions.map((cap) => ({
-      id: cap.id,
-      lecture_id: lectureId,
-      sequence: cap.sequence,
-      start_ms: cap.startMs,
-      end_ms: cap.endMs,
-      original_text: cap.originalText,
-      speaker: cap.speaker,
-      min_confidence: cap.minConfidence,
-    }));
-
-    const BATCH = 50;
-    for (let i = 0; i < captionRows.length; i += BATCH) {
-      const { error: insertErr } = await sb.from("captions").insert(captionRows.slice(i, i + BATCH));
-      if (insertErr) {
-        console.error(`Caption batch insert error (batch ${i / BATCH}):`, insertErr.message);
-        throw new Error(`Failed to insert captions: ${insertErr.message}`);
-      }
-    }
-
-    // 5. Set cleaned_text = original_text (AI cleanup deferred to user request)
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 75, "Formatting captions…");
-    for (let i = 0; i < captionRows.length; i += BATCH) {
-      const batch = captionRows.slice(i, i + BATCH);
-      await Promise.all(
-        batch.map((cap) =>
-          sb.from("captions").update({ cleaned_text: cap.original_text }).eq("id", cap.id)
-        )
-      );
-    }
-    await updateLectureStatus(lectureId, LectureStatus.CLEANING, 85, "Captions ready");
-
-    // 6. Score accessibility
-    await updateLectureStatus(lectureId, LectureStatus.SCORING, 90, "Scoring accessibility…");
-    await runScoring(lectureId, durationSeconds);
-
-    await updateLectureStatus(lectureId, LectureStatus.COMPLETED, 100, "Processing complete!");
+    await schedulePipelineContinuation(lectureId);
   } catch (e) {
     console.error(`Pipeline failed for lecture ${lectureId}:`, e);
     await updateLectureStatus(

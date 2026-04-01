@@ -153,6 +153,7 @@ function FailedView({
 }) {
   const setCurrentLecture = useAppStore((s) => s.setCurrentLecture);
   const [reprocessing, setReprocessing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const queryClient = useQueryClient();
 
   const handleReprocess = async () => {
@@ -168,13 +169,40 @@ function FailedView({
     }
   };
 
+  const handleResume = async () => {
+    setResuming(true);
+    try {
+      await api.lectures.resumeProcessing(lectureId);
+      toast.success("Caption step started (no new transcription charge)");
+      queryClient.invalidateQueries({ queryKey: ["lecture", lectureId] });
+      queryClient.invalidateQueries({ queryKey: ["progress", lectureId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not resume");
+    } finally {
+      setResuming(false);
+    }
+  };
+
   return (
     <div className="glass rounded-2xl border border-destructive/30 p-6 text-center space-y-3">
       <p className="text-destructive font-medium">Processing failed</p>
       <p className="text-sm text-muted-foreground">
-        Something went wrong during processing. You can try again.
+        Something went wrong during processing. If transcription finished but captions never
+        appeared, try Resume (cheaper than full reprocess). Otherwise use Reprocess.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button
+          variant="outline"
+          onClick={handleResume}
+          disabled={resuming || reprocessing}
+          className="rounded-xl"
+        >
+          {resuming ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting…</>
+          ) : (
+            "Resume caption step"
+          )}
+        </Button>
         <Button onClick={handleReprocess} disabled={reprocessing} className="btn-gradient">
           {reprocessing ? (
             <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Reprocessing...</>
