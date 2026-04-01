@@ -141,13 +141,12 @@ export function SocialProof() {
             THE COMPLETE ACCESSIBLE LECTURE PACKAGE
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4 font-display">
-            One upload.{" "}
-            <span className="gradient-text">Ten deliverables.</span>
+            Everything in{" "}
+            <span className="gradient-text">your package</span>
           </h2>
           <p className="text-muted-foreground text-lg leading-relaxed">
-            Most captioning services stop at #1. AccessLecture delivers the
-            complete compliance package — everything auditors check for,
-            everything students need, everything legal requires.
+            Every item a WCAG auditor checks for. Every format your LMS needs.
+            Every document your legal team wants on file.
           </p>
         </motion.div>
 
@@ -213,10 +212,8 @@ export function SocialProof() {
           transition={{ duration: 0.5, delay: 0.6 }}
           className="text-center text-sm text-muted-foreground mt-10"
         >
-          Traditional captioning services deliver{" "}
-          <strong className="text-foreground">1 of 10</strong>.{" "}
-          AccessLecture delivers{" "}
-          <strong className="gradient-text font-semibold">all ten</strong>.
+          All of this ships from a single upload.{" "}
+          <strong className="text-foreground">No integrations. No back-and-forth. No waiting.</strong>
         </motion.p>
       </div>
     </section>

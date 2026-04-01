@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Play, Sparkles, Zap, Clock, Package } from "lucide-react";
+import { ArrowRight, ShieldAlert, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
-const stats = [
-  { icon: Zap, label: "99%+ Accuracy", delay: 0.3 },
-  { icon: Package, label: "10 Deliverables", delay: 0.5 },
-  { icon: Clock, label: "Minutes, Not Days", delay: 0.7 },
+const outputItems = [
+  { label: "Captions", color: "text-green-400" },
+  { label: "Transcript", color: "text-green-400" },
+  { label: "Audio Desc.", color: "text-green-400" },
+  { label: "Slides (14)", color: "text-amber-400" },
+  { label: "Report", color: "text-green-400" },
+  { label: "Certificate", color: "text-green-400" },
 ];
 
 export function Hero() {
@@ -20,52 +23,42 @@ export function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: "easeOut" }}
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full glass-subtle text-xs font-medium text-primary mb-6">
-              <Sparkles className="w-3.5 h-3.5" />
-              THE FUTURE OF ACCESSIBLE EDUCATION
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs font-medium text-amber-600 dark:text-amber-400 mb-6">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              ADA TITLE II — COMPLIANCE DEADLINE IN EFFECT
             </div>
 
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] mb-6 font-display">
-              Your lectures, now{" "}
-              <span className="gradient-text">universally</span>{" "}
-              accessible.
+              Your lectures{" "}
+              <span className="gradient-text">aren&apos;t compliant</span>{" "}
+              yet.
             </h1>
 
             <p className="text-lg sm:text-xl text-muted-foreground leading-relaxed max-w-xl mb-8">
-              Transform any lecture recording into compliant captions, searchable
-              transcripts, and structured notes in minutes — not days.
+              Upload any lecture recording. Get back captions, a full transcript,
+              audio descriptions, extracted slides, a compliance report, and a
+              downloadable WCAG certificate — in under 5 minutes.
             </p>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 mb-8">
               <Link
                 href="/dashboard"
                 className="btn-gradient px-7 py-3 text-base font-medium rounded-xl shadow-lg inline-flex items-center gap-2"
               >
                 Get Started Free
+                <ArrowRight className="w-4 h-4" />
               </Link>
               <a
                 href="#how-it-works"
                 className="glass px-6 py-3 text-base font-medium rounded-xl inline-flex items-center gap-2 hover:bg-foreground/5 transition-colors"
               >
-                <Play className="w-4 h-4" />
                 See How It Works
               </a>
             </div>
 
-            <div className="flex flex-wrap gap-4 mt-10">
-              {stats.map((stat) => (
-                <motion.div
-                  key={stat.label}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.5, delay: stat.delay, ease: "easeOut" }}
-                  className="glass-subtle px-4 py-2.5 rounded-xl flex items-center gap-2"
-                >
-                  <stat.icon className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium">{stat.label}</span>
-                </motion.div>
-              ))}
-            </div>
+            <p className="text-xs text-muted-foreground">
+              No credit card required · WCAG 2.1 AA · Section 508 · ADA Title II · EAA
+            </p>
           </motion.div>
 
           <motion.div
@@ -75,39 +68,70 @@ export function Hero() {
             className="relative hidden lg:block"
           >
             <div className="glass rounded-2xl p-6 shadow-2xl">
+              {/* Video with live AI annotations */}
               <div className="rounded-xl bg-black/20 aspect-video flex items-center justify-center mb-4 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent" />
-                <div className="w-16 h-16 rounded-full glass flex items-center justify-center">
-                  <Play className="w-7 h-7 text-primary ml-1" />
+                <div className="w-12 h-12 rounded-full glass flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary" />
                 </div>
+
+                {/* AI audio description badge — this is the differentiator */}
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1.2, duration: 0.5 }}
+                  className="absolute top-3 right-3"
+                >
+                  <div className="glass-subtle rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-blue-400 border border-blue-400/20">
+                    🎙 &quot;Graph shows upward trend&quot;
+                  </div>
+                </motion.div>
+
+                {/* Slide extracted badge */}
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1.5, duration: 0.5 }}
+                  className="absolute top-3 left-3"
+                >
+                  <div className="glass-subtle rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-amber-400 border border-amber-400/20">
+                    📊 Slide captured
+                  </div>
+                </motion.div>
+
+                {/* Caption overlay */}
                 <div className="absolute bottom-3 left-3 right-3">
                   <div className="glass-subtle rounded-lg px-3 py-2 text-xs font-mono">
-                    <span className="text-primary/70">[00:01:23]</span>{" "}
+                    <span className="text-primary/70">[00:04:12]</span>{" "}
                     <span className="text-foreground/80">
-                      &quot;Welcome to ECS 150. Today we&apos;ll cover...&quot;
+                      &quot;As you can see on the graph—&quot;
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
+              {/* Output package summary */}
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">ECS 150 — Lecture 12</span>
+                  <span className="text-sm font-semibold">ECS 150 — Lecture 12</span>
                   <div className="flex items-center gap-1.5 text-xs">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-green-500 font-medium">98% Accessible</span>
+                    <span className="text-green-500 font-medium">98% Compliant</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <div className="glass-subtle rounded-lg px-2.5 py-1 text-[10px] font-medium">
-                    WCAG 2.1 AA
-                  </div>
-                  <div className="glass-subtle rounded-lg px-2.5 py-1 text-[10px] font-medium">
-                    Section 508
-                  </div>
-                  <div className="glass-subtle rounded-lg px-2.5 py-1 text-[10px] font-medium">
-                    .VTT Ready
-                  </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  {outputItems.map((item) => (
+                    <div
+                      key={item.label}
+                      className="glass-subtle rounded-lg px-2 py-1.5 flex items-center gap-1.5"
+                    >
+                      <span className={`text-[10px] font-bold ${item.color}`}>✓</span>
+                      <span className="text-[10px] text-muted-foreground truncate">
+                        {item.label}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
