@@ -2,12 +2,9 @@ import { GoogleGenAI } from "@google/genai";
 import { readFile, stat, unlink } from "fs/promises";
 import { config } from "./config";
 import { extractAudioChunk, getAudioDurationSeconds } from "./extract-audio";
+import { assertGeminiTranscriptionEnabled } from "./speech-to-text-optional";
 
 const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB — use File API above this
-
-/** Long recordings: Gemini often stops ~8–10 min in one shot; chunk and merge. */
-const TRANSCRIBE_CHUNK_SEC = 480;
-const TRANSCRIBE_CHUNK_OVERLAP_SEC = 3;
 
 // ---------------------------------------------------------------------------
 // Shared client (singleton)
@@ -225,48 +222,192 @@ Rules:
    words you are uncertain about. Use high confidence (0.9-1.0) for clearly spoken text.
 7. Return ONLY valid JSON — no markdown fences, no explanation.`;
 
-export async function transcribe(audioPath: string): Promise<TranscriptionResult> {
-  const durationSec = await getAudioDurationSeconds(audioPath);
-  const step = TRANSCRIBE_CHUNK_SEC - TRANSCRIBE_CHUNK_OVERLAP_SEC;
+/** Drop duplicate overlap band: keep later chunk only for content after chunkStart + overlap. */
+function trimSegmentFromCut(seg: TranscriptSegment, cutAbsMs: number): TranscriptSegment | null {
+  if (seg.endMs <= cutAbsMs) return null;
+  const words = seg.words.filter((w) => w.endMs > cutAbsMs);
+  if (words.length === 0) return null;
+  const newStart = Math.max(seg.startMs, cutAbsMs);
+  const adjustedWords = words.map((w, i) => ({
+    ...w,
+    startMs: i === 0 ? Math.max(w.startMs, newStart) : w.startMs,
+    endMs: w.endMs,
+  }));
+  const text = adjustedWords.map((w) => w.word).join(" ");
+  return {
+    ...seg,
+    id: seg.id,
+    startMs: newStart,
+    endMs: seg.endMs,
+    text,
+    words: adjustedWords,
+  };
+}
 
-  if (durationSec <= 0 || durationSec <= TRANSCRIBE_CHUNK_SEC + 1) {
-    return transcribeOnce(audioPath);
+async function fillTranscriptionGaps(
+  audioPath: string,
+  durationSec: number,
+  segments: TranscriptSegment[]
+): Promise<TranscriptSegment[]> {
+  if (!config.transcribeGapFillEnabled) return segments;
+
+  const thresholdMs = config.transcribeGapThresholdSec * 1000;
+  const maxFillSec = config.transcribeGapFillMaxSec;
+  const durationMs = Math.round(durationSec * 1000);
+  const sorted = [...segments].sort((a, b) => a.startMs - b.startMs);
+  const gaps: { startMs: number; endMs: number }[] = [];
+
+  if (sorted.length > 0 && sorted[0].startMs > thresholdMs) {
+    gaps.push({ startMs: 0, endMs: sorted[0].startMs });
+  }
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const gapStart = sorted[i].endMs;
+    const gapEnd = sorted[i + 1].startMs;
+    if (gapEnd - gapStart > thresholdMs) {
+      gaps.push({ startMs: gapStart, endMs: gapEnd });
+    }
+  }
+  if (sorted.length > 0 && durationMs - sorted[sorted.length - 1].endMs > thresholdMs) {
+    gaps.push({ startMs: sorted[sorted.length - 1].endMs, endMs: durationMs });
+  }
+  if (sorted.length === 0 && durationMs > thresholdMs) {
+    gaps.push({ startMs: 0, endMs: durationMs });
+  }
+
+  const gapSegments: TranscriptSegment[] = [];
+  let gapIdx = 0;
+
+  for (const g of gaps) {
+    let pos = g.startMs;
+    while (pos < g.endMs - 500) {
+      const remainingMs = g.endMs - pos;
+      const lenSec = Math.min(remainingMs / 1000, maxFillSec);
+      if (lenSec < 1.5) break;
+
+      const chunkPath = await extractAudioChunk(audioPath, pos / 1000, lenSec);
+      try {
+        const part = await transcribeOnce(chunkPath);
+        const offset = pos;
+        for (const seg of part.segments) {
+          gapSegments.push({
+            ...seg,
+            id: `seg-gap-${gapIdx++}`,
+            startMs: seg.startMs + offset,
+            endMs: seg.endMs + offset,
+            words: seg.words.map((w) => ({
+              ...w,
+              startMs: w.startMs + offset,
+              endMs: w.endMs + offset,
+            })),
+          });
+        }
+        console.log(
+          `[gemini] Gap-fill ${(pos / 1000).toFixed(0)}s–${(pos / 1000 + lenSec).toFixed(0)}s (${part.segments.length} segments)`
+        );
+      } catch (e) {
+        console.warn("[gemini] Gap-fill failed:", e);
+      } finally {
+        await unlink(chunkPath).catch(() => {});
+      }
+      pos += lenSec * 1000;
+    }
+  }
+
+  if (gapSegments.length === 0) return segments;
+
+  const combined = [...segments, ...gapSegments].sort((a, b) => a.startMs - b.startMs);
+  return combined.map((s, i) => ({ ...s, id: `seg-${i}` }));
+}
+
+export async function transcribe(audioPath: string): Promise<TranscriptionResult> {
+  assertGeminiTranscriptionEnabled();
+
+  const durationSec = await getAudioDurationSeconds(audioPath);
+  const chunkSec = config.transcribeChunkSec;
+  const overlapSec = config.transcribeChunkOverlapSec;
+
+  if (overlapSec >= chunkSec) {
+    throw new Error("TRANSCRIBE_CHUNK_OVERLAP_SEC must be less than TRANSCRIBE_CHUNK_SEC");
+  }
+
+  const step = chunkSec - overlapSec;
+  const overlapMs = overlapSec * 1000;
+
+  if (durationSec <= 0 || durationSec <= chunkSec + 1) {
+    const once = await transcribeOnce(audioPath);
+    const filled = await fillTranscriptionGaps(audioPath, durationSec, once.segments);
+    return {
+      segments: filled,
+      info: { ...once.info, durationSeconds: durationSec },
+    };
   }
 
   const merged: TranscriptSegment[] = [];
   let globalIdx = 0;
+  let chunkIndex = 0;
 
   for (let start = 0; start < durationSec; start += step) {
-    const chunkLen = Math.min(TRANSCRIBE_CHUNK_SEC, durationSec - start);
+    const chunkLen = Math.min(chunkSec, durationSec - start);
     if (chunkLen < 0.5) break;
 
     const chunkPath = await extractAudioChunk(audioPath, start, chunkLen);
     try {
       const part = await transcribeOnce(chunkPath);
-      const offsetMs = Math.round(start * 1000);
+      const chunkStartMs = Math.round(start * 1000);
+      const offsetMs = chunkStartMs;
+      const cutMs = chunkStartMs + overlapMs;
+
       for (const seg of part.segments) {
-        merged.push({
+        const absStart = seg.startMs + offsetMs;
+        const absEnd = seg.endMs + offsetMs;
+
+        const shifted: TranscriptSegment = {
           ...seg,
-          id: `seg-${globalIdx++}`,
-          startMs: seg.startMs + offsetMs,
-          endMs: seg.endMs + offsetMs,
+          id: `seg-${globalIdx}`,
+          startMs: absStart,
+          endMs: absEnd,
           words: seg.words.map((w) => ({
             ...w,
             startMs: w.startMs + offsetMs,
             endMs: w.endMs + offsetMs,
           })),
-        });
+        };
+
+        if (chunkIndex === 0) {
+          merged.push({ ...shifted, id: `seg-${globalIdx++}` });
+          continue;
+        }
+
+        if (absEnd <= cutMs) {
+          continue;
+        }
+
+        if (absStart >= cutMs) {
+          merged.push({ ...shifted, id: `seg-${globalIdx++}` });
+          continue;
+        }
+
+        const trimmed = trimSegmentFromCut(shifted, cutMs);
+        if (trimmed) {
+          merged.push({ ...trimmed, id: `seg-${globalIdx++}` });
+        }
       }
+
       console.log(
         `[gemini] Transcribed chunk ${start.toFixed(0)}s–${(start + chunkLen).toFixed(0)}s (${merged.length} segments total)`
       );
+      chunkIndex++;
     } finally {
       await unlink(chunkPath).catch(() => {});
     }
   }
 
+  merged.sort((a, b) => a.startMs - b.startMs);
+  const renumbered = merged.map((s, i) => ({ ...s, id: `seg-${i}` }));
+  const gapFilled = await fillTranscriptionGaps(audioPath, durationSec, renumbered);
+
   return {
-    segments: merged,
+    segments: gapFilled,
     info: {
       language: "en",
       languageProbability: 0.99,
@@ -298,6 +439,15 @@ async function transcribeOnce(audioPath: string): Promise<TranscriptionResult> {
       responseMimeType: "application/json",
     },
   });
+
+  const finishReason = response.candidates?.[0]?.finishReason;
+  if (finishReason === "MAX_TOKENS") {
+    console.warn(
+      "[gemini] transcribeOnce: MAX_TOKENS — output may be truncated; reduce TRANSCRIBE_CHUNK_SEC or check dense speech."
+    );
+  } else if (finishReason && finishReason !== "STOP") {
+    console.warn(`[gemini] transcribeOnce finishReason: ${finishReason}`);
+  }
 
   const data = parseJson(response.text ?? "") as {
     language?: string;

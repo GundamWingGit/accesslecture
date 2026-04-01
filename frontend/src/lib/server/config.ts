@@ -48,4 +48,24 @@ export const config = {
   stripePortalReturnUrl: env("STRIPE_PORTAL_RETURN_URL", "https://accesslecture.com"),
 
   freeLecturesPerMonth: envInt("FREE_LECTURES_PER_MONTH", 3),
+
+  /** Long audio: chunk size (seconds) per Gemini call. */
+  transcribeChunkSec: envInt("TRANSCRIBE_CHUNK_SEC", 480),
+  /**
+   * Overlap between consecutive chunks (seconds). Merged so the overlap band is not duplicated.
+   * Typical 10–30s once merge exists; default 15.
+   */
+  transcribeChunkOverlapSec: envInt("TRANSCRIBE_CHUNK_OVERLAP_SEC", 15),
+  /** If adjacent segments differ by more than this (seconds), run an optional gap-fill pass. */
+  transcribeGapThresholdSec: envInt("TRANSCRIBE_GAP_THRESHOLD_SEC", 45),
+  /** Run targeted re-transcription for large gaps (uses extra Gemini calls). */
+  transcribeGapFillEnabled: envBool("TRANSCRIBE_GAP_FILL_ENABLED", true),
+  /** Max length (seconds) of a single gap-fill extract. */
+  transcribeGapFillMaxSec: envInt("TRANSCRIBE_GAP_FILL_MAX_SEC", 300),
+
+  /**
+   * Tier B (not implemented): use Google Cloud Speech-to-Text batch as primary transcript.
+   * When true, transcribe() throws until STT is wired; keep false.
+   */
+  speechToTextPrimary: envBool("SPEECH_TO_TEXT_PRIMARY", false),
 } as const;
